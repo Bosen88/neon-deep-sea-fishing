@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>深海霓虹捕魚 - Cyberpunk Fishing</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- 引入 Outfit 字型，提升 UI 質感 -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="game-container">
+        <!-- 遊戲 Canvas -->
+        <canvas id="game-canvas"></canvas>
+
+        <!-- 頂部 HUD (得分、Combo、時間) -->
+        <div id="hud" class="hud-container hidden">
+            <div class="hud-item score-box">
+                <span class="hud-label">SCORE</span>
+                <span id="score-val" class="hud-value">0</span>
+            </div>
+            <div class="hud-item combo-box">
+                <span class="hud-label">COMBO</span>
+                <span id="combo-val" class="hud-value glowing-text">x1</span>
+            </div>
+            <div class="hud-item time-box">
+                <span class="hud-label">TIME</span>
+                <span id="time-val" class="hud-value red-glow">60</span>
+            </div>
+        </div>
+
+        <!-- 隨機事件通知橫幅 -->
+        <div id="event-banner" class="event-banner hidden">
+            <div id="event-text">魚潮來襲！</div>
+        </div>
+
+        <!-- 右側技能按鈕欄 -->
+        <div id="skills-panel" class="skills-container hidden">
+            <!-- 冰凍技能 -->
+            <button id="btn-freeze" class="skill-btn" title="全螢幕冰凍">
+                <div class="skill-icon">❄️</div>
+                <div class="skill-name">冰凍</div>
+                <div class="cooldown-overlay" id="cd-freeze"></div>
+            </button>
+            <!-- 雷射技能 -->
+            <button id="btn-laser" class="skill-btn" title="雷射光束">
+                <div class="skill-icon">⚡</div>
+                <div class="skill-name">雷射</div>
+                <div class="cooldown-overlay" id="cd-laser"></div>
+            </button>
+            <!-- 炸彈技能 -->
+            <button id="btn-bomb" class="skill-btn" title="深海炸彈">
+                <div class="skill-icon">💣</div>
+                <div class="skill-name">炸彈</div>
+                <div class="cooldown-overlay" id="cd-bomb"></div>
+            </button>
+            <!-- 雙倍技能 -->
+            <button id="btn-double" class="skill-btn" title="雙倍得分">
+                <div class="skill-icon">🔥</div>
+                <div class="skill-name">雙倍</div>
+                <div class="cooldown-overlay" id="cd-double"></div>
+            </button>
+        </div>
+
+        <!-- 開始畫面 Overlay -->
+        <div id="start-overlay" class="overlay">
+            <div class="overlay-content">
+                <h1 class="game-title">深海霓虹捕魚</h1>
+                <p class="game-subtitle">NEON DEEP SEA FISHING</p>
+                <div class="instructions">
+                    <p>💡 點擊畫面發射能量網捕捉霓虹魚群</p>
+                    <p>⚡ 點擊右側技能釋放強大招式獲得高分</p>
+                    <p>🦖 擊敗巨大 Boss 魚或在「魚潮」中狂拿分數！</p>
+                </div>
+                <button id="btn-start" class="glow-btn">開始遊戲</button>
+            </div>
+        </div>
+
+        <!-- 遊戲結束/結算畫面 Overlay -->
+        <div id="game-over-overlay" class="overlay hidden">
+            <div class="overlay-content">
+                <h2 class="game-over-title">遊戲結束</h2>
+                <p class="game-subtitle">GAME OVER</p>
+                
+                <div class="score-summary">
+                    <div class="final-score-box">
+                        <span class="label">最終得分</span>
+                        <span id="final-score" class="value gold-glow">0</span>
+                    </div>
+                    <div class="high-score-box">
+                        <span class="label">最高紀錄</span>
+                        <span id="high-score" class="value">0</span>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <span class="stat-label">捕獲總數</span>
+                        <span id="stat-fish-caught" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">最大 Combo</span>
+                        <span id="stat-max-combo" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Boss 擊破</span>
+                        <span id="stat-boss-killed" class="stat-value">0</span>
+                    </div>
+                </div>
+
+                <button id="btn-restart" class="glow-btn">再玩一次</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 載入遊戲腳本 -->
+    <script src="game.js"></script>
+</body>
+</html>

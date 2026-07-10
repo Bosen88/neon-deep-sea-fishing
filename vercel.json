@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "name": "neon-deep-sea-fishing",
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/$1" }
+  ]
+}

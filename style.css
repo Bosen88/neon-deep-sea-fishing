@@ -1,0 +1,548 @@
+/* ==========================================================================
+   Neon Deep Sea Fishing CSS Stylesheet
+   Design Language: Cyberpunk Ocean / Glassmorphism / Neon Glows
+   ========================================================================== */
+
+:root {
+    --neon-cyan: #00f3ff;
+    --neon-pink: #ff007b;
+    --neon-purple: #9d00ff;
+    --neon-yellow: #ffd700;
+    --neon-green: #39ff14;
+    --dark-blue: #020a17;
+    --glass-bg: rgba(6, 18, 38, 0.7);
+    --glass-border: rgba(0, 243, 255, 0.2);
+    --shadow-glow: 0 0 15px rgba(0, 243, 255, 0.4);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: var(--dark-blue);
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #ffffff;
+}
+
+#game-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#game-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    z-index: 1;
+}
+
+/* ==========================================================================
+   HUD Layout (Heads-Up Display)
+   ========================================================================== */
+
+.hud-container {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 15px;
+    z-index: 10;
+    pointer-events: none; /* Let clicks pass through to canvas */
+    transition: opacity 0.5s ease;
+}
+
+.hud-item {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 16px;
+    padding: 10px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 100px;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+.hud-label {
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 2px;
+}
+
+.hud-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    transition: transform 0.1s ease;
+}
+
+.score-box {
+    border-color: rgba(0, 243, 255, 0.4);
+    box-shadow: 0 0 15px rgba(0, 243, 255, 0.15);
+}
+
+.score-box .hud-value {
+    color: var(--neon-cyan);
+    text-shadow: 0 0 8px rgba(0, 243, 255, 0.6);
+}
+
+.combo-box {
+    border-color: rgba(255, 0, 123, 0.4);
+    box-shadow: 0 0 15px rgba(255, 0, 123, 0.15);
+}
+
+.combo-box .hud-value {
+    color: var(--neon-pink);
+    text-shadow: 0 0 8px rgba(255, 0, 123, 0.6);
+}
+
+.time-box {
+    border-color: rgba(255, 215, 0, 0.4);
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);
+}
+
+.time-box .hud-value {
+    color: var(--neon-yellow);
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+
+.red-glow {
+    animation: pulse-red 1s infinite alternate;
+}
+
+@keyframes pulse-red {
+    0% { transform: scale(1); }
+    100% { transform: scale(1.05); text-shadow: 0 0 15px var(--neon-pink); color: var(--neon-pink); }
+}
+
+/* ==========================================================================
+   Event Banner (魚潮、Boss)
+   ========================================================================== */
+
+.event-banner {
+    position: absolute;
+    top: 100px;
+    left: 50%;
+    transform: translateX(-50%) scale(0.9);
+    z-index: 9;
+    background: linear-gradient(90deg, rgba(255, 0, 123, 0) 0%, rgba(255, 0, 123, 0.8) 25%, rgba(157, 0, 255, 0.8) 75%, rgba(157, 0, 255, 0) 100%);
+    backdrop-filter: blur(4px);
+    border-top: 2px solid var(--neon-cyan);
+    border-bottom: 2px solid var(--neon-pink);
+    padding: 12px 60px;
+    font-size: 1.5rem;
+    font-weight: 800;
+    text-align: center;
+    letter-spacing: 4px;
+    text-shadow: 0 0 10px #fff;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.event-banner.active {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+}
+
+/* ==========================================================================
+   Skills Panel (右側 / 底部適配)
+   ========================================================================== */
+
+.skills-container {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    z-index: 10;
+    transition: opacity 0.5s ease;
+}
+
+.skill-btn {
+    position: relative;
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    background: var(--glass-bg);
+    border: 2px solid var(--glass-border);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    overflow: hidden;
+}
+
+.skill-btn:active {
+    transform: scale(0.9);
+}
+
+/* 各技能獨特霓虹框 */
+#btn-freeze { border-color: var(--neon-cyan); box-shadow: 0 0 10px rgba(0, 243, 255, 0.3); }
+#btn-freeze:active { box-shadow: 0 0 20px rgba(0, 243, 255, 0.8); }
+
+#btn-laser { border-color: var(--neon-yellow); box-shadow: 0 0 10px rgba(255, 215, 0, 0.3); }
+#btn-laser:active { box-shadow: 0 0 20px rgba(255, 215, 0, 0.8); }
+
+#btn-bomb { border-color: var(--neon-pink); box-shadow: 0 0 10px rgba(255, 0, 123, 0.3); }
+#btn-bomb:active { box-shadow: 0 0 20px rgba(255, 0, 123, 0.8); }
+
+#btn-double { border-color: var(--neon-purple); box-shadow: 0 0 10px rgba(157, 0, 255, 0.3); }
+#btn-double:active { box-shadow: 0 0 20px rgba(157, 0, 255, 0.8); }
+
+.skill-icon {
+    font-size: 1.6rem;
+    line-height: 1;
+    z-index: 2;
+}
+
+.skill-name {
+    font-size: 0.6rem;
+    font-weight: 800;
+    margin-top: 2px;
+    color: #ffffff;
+    z-index: 2;
+    letter-spacing: 1px;
+}
+
+/* 冷卻遮罩 */
+.cooldown-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 0%;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 3;
+    transition: height 0.1s linear;
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* 當技能冷卻中，按鈕不可點擊且變暗 */
+.skill-btn.cooldown {
+    cursor: not-allowed;
+    opacity: 0.6;
+    transform: scale(0.95);
+}
+
+/* 技能啟用中 */
+.skill-btn.active-skill {
+    animation: skill-active-glow 0.8s infinite alternate;
+}
+
+@keyframes skill-active-glow {
+    0% { transform: scale(1.05); box-shadow: 0 0 15px rgba(255, 255, 255, 0.5); }
+    100% { transform: scale(1.1); box-shadow: 0 0 25px rgba(255, 255, 255, 0.9); }
+}
+
+/* ==========================================================================
+   Overlay Screen Setup (開始 / 結束)
+   ========================================================================== */
+
+.overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(2, 6, 15, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    z-index: 100;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: opacity 0.5s ease, visibility 0.5s;
+}
+
+.overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.overlay-content {
+    background: radial-gradient(circle at top, rgba(28, 15, 48, 0.85) 0%, rgba(6, 18, 38, 0.9) 100%);
+    border: 1px solid rgba(0, 243, 255, 0.15);
+    border-radius: 28px;
+    padding: 40px 30px;
+    width: 90%;
+    max-width: 480px;
+    text-align: center;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 
+                0 0 30px rgba(157, 0, 255, 0.15);
+    animation: slide-up-fade 0.6s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+@keyframes slide-up-fade {
+    0% { transform: translateY(30px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+}
+
+.game-title {
+    font-size: 2.8rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--neon-cyan) 0%, var(--neon-pink) 50%, var(--neon-purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    text-shadow: 0 15px 30px rgba(157, 0, 255, 0.2);
+    letter-spacing: 3px;
+    margin-bottom: 2px;
+}
+
+.game-subtitle {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: 5px;
+    margin-bottom: 30px;
+}
+
+.instructions {
+    text-align: left;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 30px;
+    font-size: 0.9rem;
+    line-height: 1.8;
+}
+
+.instructions p {
+    margin-bottom: 10px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.instructions p:last-child {
+    margin-bottom: 0;
+}
+
+.glow-btn {
+    background: linear-gradient(135deg, var(--neon-cyan) 0%, var(--neon-purple) 100%);
+    border: none;
+    color: #fff;
+    font-family: inherit;
+    font-size: 1.2rem;
+    font-weight: 800;
+    padding: 15px 40px;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.4);
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    letter-spacing: 2px;
+}
+
+.glow-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 30px rgba(0, 243, 255, 0.8),
+                0 0 10px rgba(255, 0, 123, 0.5);
+}
+
+.glow-btn:active {
+    transform: scale(0.98);
+}
+
+/* ==========================================================================
+   Game Over Overlay Styles
+   ========================================================================== */
+
+.game-over-title {
+    font-size: 2.8rem;
+    font-weight: 800;
+    color: var(--neon-pink);
+    text-shadow: 0 0 20px rgba(255, 0, 123, 0.6);
+    letter-spacing: 3px;
+    margin-bottom: 2px;
+}
+
+.score-summary {
+    display: flex;
+    justify-content: space-between;
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.final-score-box, .high-score-box {
+    flex: 1;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 18px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.final-score-box {
+    border-color: rgba(255, 215, 0, 0.3);
+}
+
+.score-summary .label {
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: rgba(255, 255, 255, 0.5);
+    margin-bottom: 5px;
+}
+
+.score-summary .value {
+    font-size: 2rem;
+    font-weight: 800;
+}
+
+.gold-glow {
+    color: var(--neon-yellow);
+    text-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 30px;
+}
+
+.stat-item {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    padding: 10px;
+}
+
+.stat-label {
+    display: block;
+    font-size: 0.6rem;
+    font-weight: 800;
+    color: rgba(255, 255, 255, 0.4);
+    margin-bottom: 4px;
+}
+
+.stat-value {
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+/* ==========================================================================
+   Responsive Adaptations (橫屏與豎屏)
+   ========================================================================== */
+
+/* 豎屏樣式 (Portrait / Mobile) */
+@media (max-aspect-ratio: 1/1) {
+    .skills-container {
+        flex-direction: row;
+        right: auto;
+        bottom: 25px;
+        left: 50%;
+        top: auto;
+        transform: translateX(-50%);
+        gap: 12px;
+    }
+    
+    .skill-btn {
+        width: 58px;
+        height: 58px;
+    }
+    
+    .skill-icon {
+        font-size: 1.3rem;
+    }
+
+    .skill-name {
+        font-size: 0.55rem;
+    }
+
+    .hud-container {
+        width: 95%;
+        justify-content: center;
+        gap: 8px;
+        top: 15px;
+    }
+
+    .hud-item {
+        padding: 6px 12px;
+        min-width: 80px;
+    }
+
+    .hud-value {
+        font-size: 1.2rem;
+    }
+
+    .overlay-content {
+        padding: 30px 20px;
+    }
+
+    .game-title, .game-over-title {
+        font-size: 2.2rem;
+    }
+}
+
+/* 非常扁平的螢幕 (Landscape short screens) */
+@media (max-height: 480px) and (min-aspect-ratio: 1/1) {
+    .skills-container {
+        right: 15px;
+        gap: 6px;
+    }
+    
+    .skill-btn {
+        width: 48px;
+        height: 48px;
+    }
+
+    .skill-icon {
+        font-size: 1.1rem;
+    }
+
+    .skill-name {
+        display: none; /* 縮小螢幕時隱藏技能文字，只留圖標 */
+    }
+
+    .hud-container {
+        top: 10px;
+    }
+
+    .hud-item {
+        padding: 5px 12px;
+    }
+
+    .overlay-content {
+        padding: 20px;
+        max-width: 400px;
+    }
+
+    .instructions {
+        padding: 10px;
+        margin-bottom: 15px;
+    }
+}
