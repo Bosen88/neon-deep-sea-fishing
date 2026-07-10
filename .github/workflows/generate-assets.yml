@@ -1,0 +1,56 @@
+name: Generate missing AI assets
+
+on:
+  push:
+    paths:
+      - .github/workflows/generate-assets.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate images via Pollinations (FLUX)
+        run: |
+          gen() {
+            local file="assets/$1" w="$2" h="$3" prompt="$4"
+            if [ -f "$file" ]; then echo "skip $file (exists)"; return 0; fi
+            local encoded
+            encoded=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$prompt")
+            local url="https://image.pollinations.ai/prompt/${encoded}?width=${w}&height=${h}&model=flux&nologo=true&private=true&seed=7"
+            local i
+            for i in 1 2 3 4 5; do
+              if curl -fsSL -m 300 -o "$file" "$url"; then
+                echo "generated $file"
+                break
+              fi
+              echo "attempt $i failed for $file, retrying..."
+              rm -f "$file"
+              sleep 25
+            done
+            [ -f "$file" ] && file "$file"
+          }
+
+          BASE="vivid cyberpunk deep-sea bioluminescence, dramatic rim lighting, full body centered, isolated on a solid pure black background, no other objects, no text, video game sprite asset, photorealistic, high detail"
+
+          gen octopus.png 1216 896 "A single photorealistic glowing octopus swimming, head on the right side facing right, tentacles trailing to the left, violet and electric blue bioluminescent suckers and skin patterns, $BASE"
+          gen eel.png 1344 768 "A single photorealistic electric eel swimming, long serpentine body in a gentle S-curve, head facing right, crackling teal and cyan lightning arcs glowing along its dark body, $BASE"
+          gen seahorse.png 896 1216 "A single photorealistic seahorse, side profile facing right, curled tail, glowing magenta and gold neon patterns on its ridged body, delicate translucent fins, $BASE"
+          gen dragonboss.png 1344 768 "A single majestic photorealistic golden chinese dragon, full serpentine body in a flowing horizontal S-curve, head on the right facing right, glowing golden scales, flowing amber mane, red glowing eyes, neon gold glow, epic boss monster, $BASE"
+
+      - name: Commit generated assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets
+          if git diff --cached --quiet; then
+            echo "No new assets to commit"
+          else
+            git commit -m "Add generated creature images (octopus, eel, seahorse, dragon boss)"
+            git push
+          fi
