@@ -207,6 +207,21 @@ html, body {
     transform: scale(0.9);
 }
 
+.skill-btn:not(.cooldown):hover {
+    transform: scale(1.08);
+    filter: brightness(1.25);
+}
+
+/* 技能就緒時微微呼吸發光 */
+.skill-btn:not(.cooldown) .skill-icon {
+    animation: icon-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes icon-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.12); }
+}
+
 /* 各技能獨特霓虹框 */
 #btn-freeze { border-color: var(--neon-cyan); box-shadow: 0 0 10px rgba(0, 243, 255, 0.3); }
 #btn-freeze:active { box-shadow: 0 0 20px rgba(0, 243, 255, 0.8); }
@@ -318,6 +333,39 @@ html, body {
     text-shadow: 0 15px 30px rgba(157, 0, 255, 0.2);
     letter-spacing: 3px;
     margin-bottom: 2px;
+    animation: title-neon-flicker 4s infinite;
+}
+
+/* 霓虹燈管閃爍效果 */
+@keyframes title-neon-flicker {
+    0%, 100% { opacity: 1; filter: drop-shadow(0 0 12px rgba(0, 243, 255, 0.5)); }
+    3% { opacity: 0.6; filter: none; }
+    5% { opacity: 1; filter: drop-shadow(0 0 18px rgba(255, 0, 123, 0.7)); }
+    7% { opacity: 0.75; filter: none; }
+    9%, 60% { opacity: 1; filter: drop-shadow(0 0 12px rgba(0, 243, 255, 0.5)); }
+    62% { opacity: 0.85; filter: none; }
+    64% { opacity: 1; filter: drop-shadow(0 0 16px rgba(157, 0, 255, 0.7)); }
+}
+
+/* PRO 徽章 */
+.pro-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--neon-yellow), #ff8000);
+    color: #1a0e00;
+    font-weight: 800;
+    font-size: 0.72rem;
+    padding: 2px 10px;
+    margin-left: 6px;
+    border-radius: 20px;
+    letter-spacing: 2px;
+    vertical-align: middle;
+    box-shadow: 0 0 14px rgba(255, 215, 0, 0.55);
+    animation: pro-badge-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes pro-badge-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 10px rgba(255, 215, 0, 0.45); }
+    50% { transform: scale(1.08); box-shadow: 0 0 22px rgba(255, 215, 0, 0.85); }
 }
 
 .game-subtitle {

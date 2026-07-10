@@ -13,7 +13,14 @@ const IMAGE_PATHS = {
     bluetang: 'assets/bluetang.jpg',
     anglerfish: 'assets/anglerfish.jpg',
     shark: 'assets/shark.jpg',
-    dragon: 'assets/dragon.jpg'
+    dragon: 'assets/dragon.jpg',
+    jellyfish: 'assets/jellyfish.png',
+    lionfish: 'assets/lionfish.png',
+    swordfish: 'assets/swordfish.png',
+    mantaray: 'assets/mantaray.png',
+    turtle: 'assets/turtle.png',
+    pufferfish: 'assets/pufferfish.png',
+    whale: 'assets/whale.png'
 };
 
 function loadAndProcessAssets(callback) {
@@ -376,6 +383,70 @@ const FISH_TYPES = {
         color: '#00f0ff',
         scale: 1.0
     },
+    jellyfish: {
+        name: '幻彩霓虹水母',
+        points: 150,
+        speed: 0.55,
+        width: 52,
+        height: 62,
+        health: 1,
+        color: '#ff5ce1',
+        scale: 1.0,
+        behavior: 'drift'
+    },
+    lionfish: {
+        name: '烈焰獅子魚',
+        points: 300,
+        speed: 1.1,
+        width: 72,
+        height: 58,
+        health: 2,
+        color: '#ff6a00',
+        scale: 1.0
+    },
+    pufferfish: {
+        name: '黃金刺河豚',
+        points: 400,
+        speed: 1.0,
+        width: 62,
+        height: 56,
+        health: 2,
+        color: '#ffcc00',
+        scale: 1.0,
+        behavior: 'puffer'
+    },
+    mantaray: {
+        name: '幻影鬼蝠魟',
+        points: 600,
+        speed: 1.15,
+        width: 110,
+        height: 62,
+        health: 4,
+        color: '#c05cff',
+        scale: 1.0,
+        behavior: 'glide'
+    },
+    swordfish: {
+        name: '音速霓虹旗魚',
+        points: 800,
+        speed: 3.1,
+        width: 130,
+        height: 52,
+        health: 2,
+        color: '#2e9bff',
+        scale: 1.0,
+        behavior: 'dash'
+    },
+    turtle: {
+        name: '翡翠上古神龜',
+        points: 1500,
+        speed: 0.45,
+        width: 105,
+        height: 72,
+        health: 8,
+        color: '#2bff9e',
+        scale: 1.0
+    },
     dragon: { // Boss 魚
         name: 'Boss 霓虹黃金龍',
         points: 5000,
@@ -386,6 +457,18 @@ const FISH_TYPES = {
         color: '#ffd700',
         scale: 1.0,
         isBoss: true
+    },
+    whale: { // Boss 魚 2
+        name: 'Boss 深淵霓虹巨鯨',
+        points: 8000,
+        speed: 0.4,
+        width: 300,
+        height: 150,
+        health: 45,
+        color: '#00f3ff',
+        scale: 1.0,
+        isBoss: true,
+        bossStyle: 'sprite'
     }
 };
 
@@ -406,19 +489,30 @@ class Fish {
         this.maxHealth = config.health;
         this.color = config.color;
         this.isBoss = !!config.isBoss;
+        this.behavior = config.behavior || 'normal';
+        this.bossStyle = config.bossStyle || 'dragon';
 
         this.x = startX;
         this.y = startY;
         this.vx = (startX < 0) ? (this.speed) : (-this.speed);
         this.vy = (Math.random() - 0.5) * 0.25;
-        
+
         this.angle = Math.atan2(this.vy, this.vx);
         this.swimCycle = Math.random() * 100;
         this.isDead = false;
         this.deathTimer = 0;
         this.fadeAlpha = 1.0;
 
-        if (this.isBoss) {
+        // 行為狀態
+        this.dashTimer = 100 + Math.random() * 120; // 旗魚衝刺計時
+        this.isDashing = false;
+        this.inflateTimer = 0; // 河豚充氣計時
+        this.hitFlash = 0;     // 受擊白閃
+
+        if (this.isBoss && this.bossStyle === 'sprite') {
+            // 巨鯨 Boss：不用龍身節段，直接大型貼圖游動
+            this.vy = 0.15;
+        } else if (this.isBoss) {
             this.segments = [];
             this.segmentCount = 14; // 14節龍身
             for (let i = 0; i < this.segmentCount; i++) {
@@ -429,6 +523,8 @@ class Fish {
     }
 
     update(isFrozen) {
+        if (this.hitFlash > 0) this.hitFlash--;
+
         if (this.isDead) {
             this.deathTimer += 1;
             this.fadeAlpha = Math.max(0, 1 - this.deathTimer / 30);
@@ -442,8 +538,41 @@ class Fish {
         }
 
         if (this.isBoss) {
-            this.swimCycle += 0.04;
-            this.vy = Math.sin(this.swimCycle) * 1.5;
+            this.swimCycle += this.bossStyle === 'sprite' ? 0.05 : 0.04;
+            this.vy = Math.sin(this.swimCycle) * (this.bossStyle === 'sprite' ? 0.9 : 1.5);
+        } else if (this.behavior === 'drift') {
+            // 水母：緩慢漂移 + 明顯上下律動 + 傘體收縮推進
+            this.swimCycle += 0.07;
+            this.vy = Math.sin(this.swimCycle) * 0.85;
+            const pulse = Math.max(0, Math.sin(this.swimCycle * 2));
+            this.x += this.vx * pulse * 0.8;
+        } else if (this.behavior === 'glide') {
+            // 鬼蝠魟：大幅正弦滑翔
+            this.swimCycle += 0.05;
+            this.vy = Math.sin(this.swimCycle) * 1.4;
+        } else if (this.behavior === 'dash') {
+            // 旗魚：週期性音速衝刺
+            this.swimCycle += 0.14;
+            this.dashTimer--;
+            if (this.dashTimer <= 0) {
+                this.isDashing = !this.isDashing;
+                this.dashTimer = this.isDashing ? 40 : (140 + Math.random() * 100);
+            }
+            const mult = this.isDashing ? 2.6 : 1;
+            this.x += this.vx * (mult - 1);
+            if (Math.random() < 0.02) {
+                this.vy = (Math.random() - 0.5) * 0.8;
+            }
+        } else if (this.behavior === 'puffer') {
+            this.swimCycle += 0.1;
+            if (this.inflateTimer > 0) {
+                this.inflateTimer--;
+                // 充氣時驚慌加速逃跑
+                this.x += this.vx * 0.9;
+            }
+            if (Math.random() < 0.015) {
+                this.vy = (Math.random() - 0.5) * 0.5;
+            }
         } else {
             this.swimCycle += 0.12;
             if (Math.random() < 0.015) {
@@ -453,9 +582,11 @@ class Fish {
 
         this.x += this.vx;
         this.y += this.vy;
-        this.angle = Math.atan2(this.vy, this.vx);
+        // 水母身體保持直立，其餘魚類朝游動方向
+        const tiltFactor = this.behavior === 'drift' ? 0.15 : 1;
+        this.angle = Math.atan2(this.vy * tiltFactor, this.vx);
 
-        if (this.isBoss) {
+        if (this.isBoss && this.bossStyle === 'dragon') {
             let prevX = this.x;
             let prevY = this.y;
             const distBetweenSegments = 23;
@@ -482,13 +613,68 @@ class Fish {
         ctx.save();
         ctx.globalAlpha = this.fadeAlpha;
         
-        if (this.isBoss) {
+        if (this.isBoss && this.bossStyle === 'sprite') {
+            this.drawBossWhale(ctx);
+        } else if (this.isBoss) {
             this.drawBossDragon(ctx);
         } else {
             this.drawNormalFish(ctx);
         }
 
         ctx.restore();
+    }
+
+    // 繪製巨鯨 Boss (超大型波動貼圖 + 深淵光環)
+    drawBossWhale(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle * 0.4);
+
+        const facingLeft = this.vx < 0;
+        if (facingLeft) {
+            ctx.scale(1, -1);
+        }
+
+        const w = this.width;
+        const h = this.height;
+
+        // 深淵霓虹巨型光環
+        const auraGrad = ctx.createRadialGradient(0, 0, 20, 0, 0, w * 0.75);
+        auraGrad.addColorStop(0, this.color);
+        auraGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = auraGrad;
+        ctx.globalAlpha = 0.22 + Math.sin(this.swimCycle * 2) * 0.06;
+        ctx.beginPath();
+        ctx.arc(0, 0, w * 0.75, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.globalAlpha = this.fadeAlpha;
+
+        const sprite = IMAGES[this.typeKey];
+        if (sprite) {
+            const swimCycle = this.isDead ? 0 : this.swimCycle * 2;
+            this.drawWavySprite(ctx, sprite, w, h, swimCycle);
+        } else {
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // 受擊白閃
+        if (this.hitFlash > 0) {
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.globalAlpha = this.hitFlash / 10 * 0.5;
+            if (sprite) this.drawWavySprite(ctx, sprite, w, h, this.swimCycle * 2);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        ctx.restore();
+
+        if (this.health > 0) {
+            this.drawBossHealthBar(ctx);
+        }
     }
 
     // 繪製寫實魚 (使用真實生成的圖片 assets，並套用即時波動網格動畫)
@@ -502,8 +688,36 @@ class Fish {
             ctx.scale(1, -1);
         }
 
-        const w = this.width;
-        const h = this.height;
+        let w = this.width;
+        let h = this.height;
+
+        // 河豚充氣膨脹
+        if (this.inflateTimer > 0) {
+            const inflate = 1 + 0.45 * Math.min(1, this.inflateTimer / 20);
+            w *= inflate;
+            h *= inflate;
+        }
+
+        // 水母傘體收縮律動
+        if (this.behavior === 'drift' && !this.isDead) {
+            const squash = 1 + Math.sin(this.swimCycle * 2) * 0.1;
+            w *= squash;
+            h *= (2 - squash);
+        }
+
+        // 旗魚衝刺：藍色殘影尾跡
+        if (this.isDashing && !this.isDead) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            const trailGrad = ctx.createLinearGradient(-w * 1.6, 0, 0, 0);
+            trailGrad.addColorStop(0, 'rgba(46, 155, 255, 0)');
+            trailGrad.addColorStop(1, 'rgba(46, 155, 255, 0.35)');
+            ctx.fillStyle = trailGrad;
+            ctx.beginPath();
+            ctx.ellipse(-w * 0.8, 0, w * 0.85, h * 0.32, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
 
         // 💡 底部霓虹光環背景
         const auraGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, Math.max(w, h) * 0.68);
@@ -514,7 +728,7 @@ class Fish {
         ctx.beginPath();
         ctx.arc(0, 0, Math.max(w, h) * 0.68, 0, Math.PI * 2);
         ctx.fill();
-        
+
         ctx.globalAlpha = this.fadeAlpha;
 
         // 💡 繪製精美波動寫實圖片
@@ -522,6 +736,14 @@ class Fish {
         if (sprite) {
             const swimCycle = this.isDead ? 0 : this.swimCycle;
             this.drawWavySprite(ctx, sprite, w, h, swimCycle);
+
+            // 受擊白閃
+            if (this.hitFlash > 0) {
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = this.hitFlash / 10 * 0.6;
+                this.drawWavySprite(ctx, sprite, w, h, swimCycle);
+                ctx.globalCompositeOperation = 'source-over';
+            }
         }
 
         ctx.restore();
@@ -700,13 +922,20 @@ class Fish {
         const dx = this.x - netX;
         const dy = this.y - netY;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const hitRadius = this.isBoss ? this.width * 0.95 : Math.max(this.width, this.height) * 0.45;
+        let hitRadius;
+        if (this.isBoss && this.bossStyle === 'sprite') {
+            hitRadius = this.width * 0.42;
+        } else if (this.isBoss) {
+            hitRadius = this.width * 0.95;
+        } else {
+            hitRadius = Math.max(this.width, this.height) * 0.45;
+        }
 
         if (dist < netRadius + hitRadius) {
             return true;
         }
 
-        if (this.isBoss) {
+        if (this.isBoss && this.bossStyle === 'dragon') {
             for (let i = 0; i < this.segmentCount; i++) {
                 const seg = this.segments[i];
                 const sdx = seg.x - netX;
@@ -965,6 +1194,23 @@ class Particle {
             this.radius = 2 + Math.random() * 3;
             this.alpha = 0.8;
             this.fadeSpeed = 0.02;
+        } else if (type === 'ring') {
+            // 擊殺衝擊波光環
+            this.vx = 0;
+            this.vy = 0;
+            this.radius = 8;
+            this.maxRadius = 70;
+            this.growSpeed = 4.5;
+            this.alpha = 0.9;
+            this.fadeSpeed = 0.05;
+        } else if (type === 'plankton') {
+            // 背景漂浮螢光浮游生物
+            this.vx = (Math.random() - 0.5) * 0.25;
+            this.vy = (Math.random() - 0.5) * 0.2;
+            this.radius = 0.8 + Math.random() * 1.8;
+            this.alpha = 0.12 + Math.random() * 0.3;
+            this.fadeSpeed = 0;
+            this.twinklePhase = Math.random() * 100;
         }
     }
 
@@ -1018,6 +1264,21 @@ class Particle {
             this.alpha -= this.fadeSpeed;
             if (this.alpha <= 0) this.isDead = true;
         }
+        else if (this.type === 'ring') {
+            this.radius += this.growSpeed;
+            this.alpha -= this.fadeSpeed;
+            if (this.alpha <= 0 || this.radius > this.maxRadius) this.isDead = true;
+        }
+        else if (this.type === 'plankton') {
+            this.twinklePhase += 0.03;
+            this.x += this.vx;
+            this.y += this.vy;
+            // 永久漂浮，超出邊界則回繞
+            if (this.x < -5) this.x = window.innerWidth + 5;
+            if (this.x > window.innerWidth + 5) this.x = -5;
+            if (this.y < -5) this.y = window.innerHeight + 5;
+            if (this.y > window.innerHeight + 5) this.y = -5;
+        }
         return false;
     }
 
@@ -1051,6 +1312,22 @@ class Particle {
             ctx.fill();
         } 
         else if (this.type === 'spark') {
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        else if (this.type === 'ring') {
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 3;
+            ctx.shadowColor = this.color;
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        else if (this.type === 'plankton') {
+            ctx.globalAlpha = this.alpha * (0.5 + 0.5 * Math.abs(Math.sin(this.twinklePhase)));
             ctx.fillStyle = this.color;
             ctx.beginPath();
             ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
@@ -1141,6 +1418,26 @@ class Game {
         this.isDoubleScore = false;
         this.doubleScoreTimer = 0;
 
+        // 🔥 FEVER 狂熱模式 (連擊觸發三向砲)
+        this.isFever = false;
+        this.feverTimer = 0;
+
+        // 按住連發
+        this.autoFire = false;
+        this.pointerX = 0;
+        this.pointerY = 0;
+        this.autoFireCounter = 0;
+
+        // 神秘寶箱
+        this.treasureList = [];
+        this.treasureTimer = 480;
+
+        // 全螢幕金色閃光 (Boss 擊殺)
+        this.flashTimer = 0;
+
+        // 遠景剪影魚群 (視差背景)
+        this.silhouettes = [];
+
         this.width = window.innerWidth;
         this.height = window.innerHeight;
 
@@ -1179,12 +1476,40 @@ class Game {
         this.isFrozen = false;
         this.isLaserActive = false;
         this.isDoubleScore = false;
-        
+        this.isFever = false;
+        this.feverTimer = 0;
+        this.autoFire = false;
+        this.treasureList = [];
+        this.treasureTimer = 480;
+        this.flashTimer = 0;
+
         this.fishList = [];
         this.bulletList = [];
         this.netList = [];
         this.particleList = [];
         this.textList = [];
+
+        // 初始化遠景剪影魚群
+        this.silhouettes = [];
+        for (let i = 0; i < 6; i++) {
+            this.silhouettes.push({
+                x: Math.random() * this.width,
+                y: 60 + Math.random() * (this.height - 160),
+                w: 20 + Math.random() * 45,
+                speed: (0.12 + Math.random() * 0.3) * (Math.random() < 0.5 ? 1 : -1)
+            });
+        }
+
+        // 初始化螢光浮游生物
+        for (let i = 0; i < 14; i++) {
+            const p = new Particle(
+                Math.random() * this.width,
+                Math.random() * this.height,
+                'plankton',
+                Math.random() < 0.5 ? '#00f3ff' : '#9d00ff'
+            );
+            this.particleList.push(p);
+        }
 
         Object.keys(this.cooldowns).forEach(k => {
             this.cooldowns[k].current = 0;
@@ -1258,6 +1583,28 @@ class Game {
 
         this.canvas.addEventListener('touchstart', (e) => this.handleTap(e), { passive: false });
         this.canvas.addEventListener('mousedown', (e) => this.handleTap(e));
+
+        // 🔫 按住持續連發：移動時更新瞄準點，放開時停止
+        const updatePointer = (e) => {
+            if (e.touches && e.touches.length > 0) {
+                this.pointerX = e.touches[e.touches.length - 1].clientX;
+                this.pointerY = e.touches[e.touches.length - 1].clientY;
+            } else {
+                this.pointerX = e.clientX;
+                this.pointerY = e.clientY;
+            }
+        };
+        this.canvas.addEventListener('touchmove', (e) => {
+            if (this.gameState === 'PLAYING') e.preventDefault();
+            updatePointer(e);
+        }, { passive: false });
+        this.canvas.addEventListener('mousemove', (e) => updatePointer(e));
+
+        const stopAutoFire = () => { this.autoFire = false; };
+        window.addEventListener('touchend', stopAutoFire);
+        window.addEventListener('touchcancel', stopAutoFire);
+        window.addEventListener('mouseup', stopAutoFire);
+        window.addEventListener('mouseleave', stopAutoFire);
 
         document.getElementById('btn-freeze').addEventListener('click', (e) => { e.stopPropagation(); this.useFreeze(); });
         document.getElementById('btn-laser').addEventListener('click', (e) => { e.stopPropagation(); this.useLaser(); });
@@ -1374,12 +1721,17 @@ class Game {
 
     triggerBossEvent() {
         this.activeEvent = 'BOSS';
-        this.showEventBanner('警告：Boss 霓虹黃金龍降臨！');
 
-        const side = Math.random() < 0.5 ? -150 : this.width + 150;
+        // 隨機挑選 Boss：霓虹黃金龍 或 深淵霓虹巨鯨
+        const bossType = Math.random() < 0.5 ? 'dragon' : 'whale';
+        const bossName = FISH_TYPES[bossType].name;
+        const bossPoints = FISH_TYPES[bossType].points;
+        this.showEventBanner(`警告：${bossName}降臨！`);
+
+        const side = Math.random() < 0.5 ? -350 : this.width + 350;
         const y = this.height * 0.4;
-        
-        const boss = new Fish('dragon', side, y, 1.0);
+
+        const boss = new Fish(bossType, side, y, 1.0);
         this.fishList.push(boss);
 
         const checkBoss = setInterval(() => {
@@ -1389,17 +1741,17 @@ class Game {
                 return;
             }
 
-            const isBossAlive = this.fishList.some(f => f.typeKey === 'dragon' && !f.isDead);
-            const isBossStillHere = this.fishList.some(f => f.typeKey === 'dragon');
+            const isBossAlive = this.fishList.some(f => f.typeKey === bossType && !f.isDead);
+            const isBossStillHere = this.fishList.some(f => f.typeKey === bossType);
 
             if (!isBossStillHere) {
                 clearInterval(checkBoss);
                 this.activeEvent = null;
-            } 
+            }
             else if (!isBossAlive && isBossStillHere) {
                 clearInterval(checkBoss);
                 this.stats.bossKilled++;
-                this.showEventBanner('Boss 被擊敗！獲得 5000 點獎勵！');
+                this.showEventBanner(`Boss 被擊敗！獲得 ${bossPoints} 點獎勵！`);
                 this.activeEvent = null;
             }
         }, 500);
@@ -1419,6 +1771,8 @@ class Game {
 
     gameOver() {
         this.gameState = 'GAMEOVER';
+        this.autoFire = false;
+        this.isFever = false;
         clearInterval(this.timerInterval);
 
         if (this.score > this.highScore) {
@@ -1469,6 +1823,12 @@ class Game {
             return;
         }
 
+        // 啟動按住連發
+        this.pointerX = clientX;
+        this.pointerY = clientY;
+        this.autoFire = true;
+        this.autoFireCounter = 0;
+
         this.fireBullet(clientX, clientY);
     }
 
@@ -1478,14 +1838,28 @@ class Game {
         this.cannon.updateAngle(targetX, targetY);
         this.cannon.recoil = 15;
 
-        const bullet = new Bullet(
-            this.cannon.x, 
-            this.cannon.y - 40, 
-            this.cannon.angle, 
-            targetX, 
-            targetY
-        );
-        this.bulletList.push(bullet);
+        // 🔥 FEVER 模式：三向能量彈齊發
+        const spreads = this.isFever ? [-0.18, 0, 0.18] : [0];
+
+        for (const spread of spreads) {
+            const angle = this.cannon.angle + spread;
+            const dist = Math.sqrt(
+                Math.pow(targetX - this.cannon.x, 2) +
+                Math.pow(targetY - this.cannon.y, 2)
+            );
+            const tx = this.cannon.x + Math.cos(angle) * dist;
+            const ty = this.cannon.y + Math.sin(angle) * dist;
+
+            const bullet = new Bullet(
+                this.cannon.x,
+                this.cannon.y - 40,
+                angle,
+                tx,
+                ty
+            );
+            if (this.isFever) bullet.color = '#ff007b';
+            this.bulletList.push(bullet);
+        }
         soundCtrl.playShoot();
     }
 
@@ -1506,7 +1880,13 @@ class Game {
             if (fish.checkCollision(net.x, net.y, net.radius)) {
                 const damage = net.isLaser ? 3 : 1;
                 fish.health -= damage;
+                fish.hitFlash = 10;
                 caughtSomething = true;
+
+                // 河豚受擊充氣
+                if (fish.behavior === 'puffer' && fish.health > 0) {
+                    fish.inflateTimer = 90;
+                }
 
                 for (let k = 0; k < 6; k++) {
                     this.particleList.push(new Particle(fish.x, fish.y, 'spark', fish.color));
@@ -1520,13 +1900,32 @@ class Game {
                     if (this.isDoubleScore) {
                         basePoints *= 2;
                     }
+                    if (this.isFever) {
+                        basePoints = Math.floor(basePoints * 1.5);
+                    }
                     this.score += basePoints;
-                    
+
                     this.combo++;
                     this.comboTimer = 120;
                     if (this.combo > this.stats.maxCombo) {
                         this.stats.maxCombo = this.combo;
                     }
+
+                    // 連擊里程碑震撼特效
+                    if (this.combo > 0 && this.combo % 5 === 0) {
+                        this.textList.push(new FloatingText(this.width / 2, this.height * 0.35, `COMBO x${this.combo}!!`, '#ff007b'));
+                        const ring = new Particle(fish.x, fish.y, 'ring', '#ff007b');
+                        ring.maxRadius = 140;
+                        this.particleList.push(ring);
+                    }
+
+                    // 🔥 連擊達 8 觸發 FEVER 狂熱模式
+                    if (this.combo >= 8 && !this.isFever) {
+                        this.startFever();
+                    }
+
+                    // 擊殺衝擊波
+                    this.particleList.push(new Particle(fish.x, fish.y, 'ring', fish.color));
 
                     const ptsText = this.isDoubleScore ? `+${basePoints} DOUBLE!` : `+${basePoints}`;
                     this.textList.push(new FloatingText(fish.x, fish.y - 10, ptsText, this.isDoubleScore ? '#ff007b' : fish.color));
@@ -1536,10 +1935,32 @@ class Game {
                         this.particleList.push(new Particle(fish.x, fish.y, 'gold'));
                     }
 
+                    // Boss 擊殺全螢幕金色震撼
+                    if (fish.isBoss) {
+                        this.flashTimer = 14;
+                        this.screenShake = 25;
+                        const bigRing = new Particle(fish.x, fish.y, 'ring', '#ffd700');
+                        bigRing.maxRadius = 320;
+                        bigRing.growSpeed = 9;
+                        this.particleList.push(bigRing);
+                    }
+
                     soundCtrl.playCoin();
                 } else {
                     this.textList.push(new FloatingText(fish.x, fish.y - 12, 'HIT!', '#ff0055'));
                 }
+            }
+        }
+
+        // 檢查神秘寶箱是否被擊中
+        for (let i = this.treasureList.length - 1; i >= 0; i--) {
+            const chest = this.treasureList[i];
+            const dx = chest.x - net.x;
+            const dy = chest.y - net.y;
+            if (Math.sqrt(dx * dx + dy * dy) < net.radius + chest.radius) {
+                this.openTreasure(chest);
+                this.treasureList.splice(i, 1);
+                caughtSomething = true;
             }
         }
 
@@ -1659,19 +2080,117 @@ class Game {
         this.showEventBanner('雙倍得分啟動！大肆捕獵吧！');
     }
 
+    // 🔥 FEVER 狂熱模式：三向砲 + 1.5 倍分數 + 魚群湧現
+    startFever() {
+        this.isFever = true;
+        this.feverTimer = 600; // 10 秒
+        soundCtrl.playDouble();
+        this.showEventBanner('🔥 FEVER TIME！三向狂熱砲全開！');
+
+        for (let i = 0; i < 8; i++) {
+            this.spawnFish();
+        }
+    }
+
+    // 🎁 神秘寶箱生成與獎勵
+    spawnTreasure() {
+        this.treasureList.push({
+            x: 60 + Math.random() * (this.width - 120),
+            y: this.height + 30,
+            vy: -0.5,
+            radius: 20,
+            phase: Math.random() * 10
+        });
+    }
+
+    openTreasure(chest) {
+        const roll = Math.random();
+        soundCtrl.playDouble();
+
+        const bigRing = new Particle(chest.x, chest.y, 'ring', '#ffd700');
+        bigRing.maxRadius = 180;
+        bigRing.growSpeed = 7;
+        this.particleList.push(bigRing);
+
+        for (let j = 0; j < 14; j++) {
+            this.particleList.push(new Particle(chest.x, chest.y, 'gold'));
+        }
+
+        if (roll < 0.45) {
+            const bonus = 500 + Math.floor(Math.random() * 4) * 500;
+            this.score += bonus;
+            document.getElementById('score-val').textContent = this.score;
+            this.textList.push(new FloatingText(chest.x, chest.y - 15, `🎁 寶箱 +${bonus}!`, '#ffd700'));
+        } else if (roll < 0.75) {
+            this.timeLeft += 8;
+            document.getElementById('time-val').textContent = this.timeLeft;
+            this.textList.push(new FloatingText(chest.x, chest.y - 15, '🎁 時間 +8 秒!', '#39ff14'));
+        } else {
+            Object.keys(this.cooldowns).forEach(k => {
+                this.cooldowns[k].current = 0;
+                const overlay = document.getElementById(`cd-${k}`);
+                if (overlay) overlay.style.height = '0%';
+                const btn = document.getElementById(`btn-${k}`);
+                if (btn) btn.classList.remove('cooldown');
+            });
+            this.textList.push(new FloatingText(chest.x, chest.y - 15, '🎁 技能冷卻全部歸零!', '#00f3ff'));
+        }
+    }
+
+    drawTreasures() {
+        for (const chest of this.treasureList) {
+            const bob = Math.sin(chest.phase) * 4;
+            const glow = 0.5 + 0.5 * Math.abs(Math.sin(chest.phase * 1.4));
+
+            this.ctx.save();
+            this.ctx.translate(chest.x, chest.y + bob);
+
+            // 金色光暈
+            const grad = this.ctx.createRadialGradient(0, 0, 3, 0, 0, chest.radius * 2.2);
+            grad.addColorStop(0, `rgba(255, 215, 0, ${0.5 * glow})`);
+            grad.addColorStop(1, 'rgba(255, 215, 0, 0)');
+            this.ctx.fillStyle = grad;
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, chest.radius * 2.2, 0, Math.PI * 2);
+            this.ctx.fill();
+
+            // 寶箱本體
+            this.ctx.font = `${chest.radius * 1.7}px sans-serif`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.rotate(Math.sin(chest.phase * 0.8) * 0.15);
+            this.ctx.fillText('🎁', 0, 0);
+
+            this.ctx.restore();
+        }
+    }
+
     spawnFish() {
         if (this.gameState !== 'PLAYING') return;
 
+        // 12 種海洋生物出沒機率表（越稀有分數越高）
         const rand = Math.random();
         let type = 'goldfish';
-        
-        if (rand > 0.95) {
+
+        if (rand > 0.975) {
+            type = 'turtle';
+        } else if (rand > 0.945) {
             type = 'shark';
-        } else if (rand > 0.82) {
+        } else if (rand > 0.905) {
+            type = 'swordfish';
+        } else if (rand > 0.855) {
+            type = 'mantaray';
+        } else if (rand > 0.795) {
             type = 'anglerfish';
-        } else if (rand > 0.60) {
+        } else if (rand > 0.725) {
+            type = 'pufferfish';
+        } else if (rand > 0.645) {
+            type = 'lionfish';
+        } else if (rand > 0.55) {
+            type = 'jellyfish';
+        } else if (rand > 0.40) {
             type = 'bluetang';
-        } else if (rand > 0.30) {
+        } else if (rand > 0.20) {
             type = 'clownfish';
         }
 
@@ -1684,8 +2203,10 @@ class Game {
     spawnFishAt(x, y, speedMult = 1.0) {
         const rand = Math.random();
         let type = 'goldfish';
-        if (rand > 0.7) type = 'clownfish';
-        if (rand > 0.9) type = 'bluetang';
+        if (rand > 0.55) type = 'clownfish';
+        if (rand > 0.75) type = 'bluetang';
+        if (rand > 0.88) type = 'jellyfish';
+        if (rand > 0.95) type = 'lionfish';
 
         const fish = new Fish(type, x, y, speedMult);
         this.fishList.push(fish);
@@ -1729,6 +2250,49 @@ class Game {
             }
         }
 
+        // 🔥 FEVER 倒數
+        if (this.isFever) {
+            this.feverTimer--;
+            if (this.feverTimer <= 0) {
+                this.isFever = false;
+            }
+        }
+
+        if (this.flashTimer > 0) {
+            this.flashTimer--;
+        }
+
+        // 🔫 按住連發 (FEVER 時射速加快)
+        if (this.autoFire && !this.isLaserActive) {
+            this.autoFireCounter++;
+            const interval = this.isFever ? 7 : 11;
+            if (this.autoFireCounter % interval === 0) {
+                this.fireBullet(this.pointerX, this.pointerY);
+            }
+        }
+
+        // 🎁 神秘寶箱：定時生成、緩緩上浮
+        this.treasureTimer--;
+        if (this.treasureTimer <= 0) {
+            this.spawnTreasure();
+            this.treasureTimer = 700 + Math.floor(Math.random() * 500);
+        }
+        for (let i = this.treasureList.length - 1; i >= 0; i--) {
+            const chest = this.treasureList[i];
+            chest.phase += 0.05;
+            chest.y += chest.vy;
+            if (chest.y < -40) {
+                this.treasureList.splice(i, 1);
+            }
+        }
+
+        // 遠景剪影魚群漂移
+        for (const s of this.silhouettes) {
+            s.x += s.speed;
+            if (s.speed > 0 && s.x > this.width + 60) s.x = -60;
+            if (s.speed < 0 && s.x < -60) s.x = this.width + 60;
+        }
+
         if (this.cannon) {
             this.cannon.update();
         }
@@ -1768,7 +2332,8 @@ class Game {
             }
         }
 
-        if (this.fishList.length < 5 && !this.activeEvent) {
+        const minFish = this.isFever ? 10 : 7;
+        if (this.fishList.length < minFish && !this.activeEvent) {
             this.spawnFish();
         }
 
@@ -1832,8 +2397,11 @@ class Game {
         this.ctx.fillStyle = bgGrad;
         this.ctx.fillRect(0, 0, this.width, this.height);
 
+        this.drawSilhouettes();
         this.drawSeaweed();
         this.drawSunRays();
+
+        this.drawTreasures();
 
         for (const fish of this.fishList) {
             fish.draw(this.ctx);
@@ -1869,6 +2437,61 @@ class Game {
             this.drawDoubleScoreOverlay();
         }
 
+        if (this.isFever) {
+            this.drawFeverOverlay();
+        }
+
+        // Boss 擊殺金色閃光
+        if (this.flashTimer > 0) {
+            this.ctx.save();
+            this.ctx.globalCompositeOperation = 'lighter';
+            this.ctx.fillStyle = `rgba(255, 215, 0, ${this.flashTimer / 14 * 0.45})`;
+            this.ctx.fillRect(0, 0, this.width, this.height);
+            this.ctx.restore();
+        }
+
+        this.ctx.restore();
+    }
+
+    // 遠景剪影魚群 (視差深度感)
+    drawSilhouettes() {
+        this.ctx.save();
+        this.ctx.fillStyle = 'rgba(10, 35, 70, 0.55)';
+        for (const s of this.silhouettes) {
+            const facing = s.speed > 0 ? 1 : -1;
+            this.ctx.beginPath();
+            this.ctx.ellipse(s.x, s.y, s.w, s.w * 0.38, 0, 0, Math.PI * 2);
+            this.ctx.fill();
+            // 尾鰭
+            this.ctx.beginPath();
+            this.ctx.moveTo(s.x - facing * s.w * 0.9, s.y);
+            this.ctx.lineTo(s.x - facing * s.w * 1.45, s.y - s.w * 0.35);
+            this.ctx.lineTo(s.x - facing * s.w * 1.45, s.y + s.w * 0.35);
+            this.ctx.closePath();
+            this.ctx.fill();
+        }
+        this.ctx.restore();
+    }
+
+    // 🔥 FEVER 狂熱模式彩虹霓虹邊框
+    drawFeverOverlay() {
+        this.ctx.save();
+        const hue = (Date.now() * 0.15) % 360;
+        const intensity = 0.45 + Math.abs(Math.sin(Date.now() * 0.008)) * 0.4;
+
+        this.ctx.strokeStyle = `hsla(${hue}, 100%, 60%, ${intensity})`;
+        this.ctx.lineWidth = 7;
+        this.ctx.shadowColor = `hsl(${hue}, 100%, 55%)`;
+        this.ctx.shadowBlur = 26;
+        this.ctx.strokeRect(4, 4, this.width - 8, this.height - 8);
+
+        // 頂部 FEVER 標語
+        this.ctx.font = 'bold 17px Outfit';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillStyle = `hsla(${hue}, 100%, 65%, ${intensity})`;
+        this.ctx.shadowBlur = 10;
+        const secs = Math.ceil(this.feverTimer / 60);
+        this.ctx.fillText(`🔥 FEVER x1.5 三向砲 ${secs}s 🔥`, this.width / 2, this.height - 16);
         this.ctx.restore();
     }
 
@@ -1883,6 +2506,23 @@ class Game {
         this.ctx.fillStyle = bgGrad;
         this.ctx.fillRect(0, 0, this.width, this.height);
 
+        // 首頁也顯示漂移的遠景魚群剪影
+        if (this.silhouettes.length === 0) {
+            for (let i = 0; i < 6; i++) {
+                this.silhouettes.push({
+                    x: Math.random() * this.width,
+                    y: 60 + Math.random() * (this.height - 160),
+                    w: 20 + Math.random() * 45,
+                    speed: (0.12 + Math.random() * 0.3) * (Math.random() < 0.5 ? 1 : -1)
+                });
+            }
+        }
+        for (const s of this.silhouettes) {
+            s.x += s.speed;
+            if (s.speed > 0 && s.x > this.width + 60) s.x = -60;
+            if (s.speed < 0 && s.x < -60) s.x = this.width + 60;
+        }
+        this.drawSilhouettes();
         this.drawSeaweed();
         this.drawSunRays();
 
