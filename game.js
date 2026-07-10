@@ -20,7 +20,23 @@ const IMAGE_PATHS = {
     mantaray: 'assets/mantaray.png',
     turtle: 'assets/turtle.png',
     pufferfish: 'assets/pufferfish.png',
-    whale: 'assets/whale.png'
+    whale: 'assets/whale.png',
+    octopus: 'assets/octopus.png',
+    eel: 'assets/eel.png',
+    seahorse: 'assets/seahorse.png',
+    dragonboss: 'assets/dragonboss.png'
+};
+
+// 每張原始圖的實際朝向。遊戲引擎一律以「朝右」為準，
+// 朝左的圖會在載入時自動水平翻正，確保臉的方向與游動方向一致。
+const IMAGE_FACING = {
+    goldfish: 'left',
+    clownfish: 'right',
+    bluetang: 'left',
+    anglerfish: 'left',
+    shark: 'left',
+    dragon: 'left'
+    // 未列出的圖預設朝右
 };
 
 function loadAndProcessAssets(callback) {
@@ -46,21 +62,50 @@ function loadAndProcessAssets(callback) {
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0);
             
-            // 2. 去除黑色背景 (R < 15, G < 15, B < 15) 轉換為透明
+            // 2. 去除背景轉換為透明：
+            //    取四個角的平均色當作背景色（AI 生成圖的背景可能是純黑或深藍黑），
+            //    與背景色距離相近、或本身極暗的像素一律轉為透明
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imgData.data;
+            const w4 = canvas.width, h4 = canvas.height;
+            const cornerOffsets = [
+                0,
+                (w4 - 1) * 4,
+                (h4 - 1) * w4 * 4,
+                ((h4 - 1) * w4 + (w4 - 1)) * 4
+            ];
+            let bgR = 0, bgG = 0, bgB = 0;
+            cornerOffsets.forEach(o => { bgR += data[o]; bgG += data[o + 1]; bgB += data[o + 2]; });
+            bgR /= 4; bgG /= 4; bgB /= 4;
+            const bgThreshold = 30;
+
             for (let i = 0; i < data.length; i += 4) {
                 const r = data[i];
                 const g = data[i+1];
                 const b = data[i+2];
-                if (r < 15 && g < 15 && b < 15) {
+                const dr = r - bgR, dg = g - bgG, db = b - bgB;
+                const distToBg = Math.sqrt(dr * dr + dg * dg + db * db);
+                if (distToBg < bgThreshold || (r < 15 && g < 15 && b < 15)) {
                     data[i+3] = 0; // Alpha 設為 0 透明
                 }
             }
             ctx.putImageData(imgData, 0, 0);
             
             // 3. 裁剪四周空白/透明邊框，讓魚的碰撞體積更精準
-            const croppedCanvas = cropTransparentCanvas(canvas);
+            let croppedCanvas = cropTransparentCanvas(canvas);
+
+            // 4. 朝向標準化：朝左的原圖水平翻正為朝右
+            if (IMAGE_FACING[key] === 'left') {
+                const flipped = document.createElement('canvas');
+                flipped.width = croppedCanvas.width;
+                flipped.height = croppedCanvas.height;
+                const fctx = flipped.getContext('2d');
+                fctx.translate(flipped.width, 0);
+                fctx.scale(-1, 1);
+                fctx.drawImage(croppedCanvas, 0, 0);
+                croppedCanvas = flipped;
+            }
+
             IMAGES[key] = croppedCanvas; // 存入全局圖片庫
             
             loadedCount++;
@@ -437,6 +482,39 @@ const FISH_TYPES = {
         scale: 1.0,
         behavior: 'dash'
     },
+    seahorse: {
+        name: '霓虹幻彩海馬',
+        points: 350,
+        speed: 0.5,
+        width: 42,
+        height: 64,
+        health: 1,
+        color: '#ff9de2',
+        scale: 1.0,
+        behavior: 'drift'
+    },
+    octopus: {
+        name: '魅影螢光章魚',
+        points: 700,
+        speed: 0.8,
+        width: 92,
+        height: 78,
+        health: 3,
+        color: '#7a5cff',
+        scale: 1.0,
+        behavior: 'drift'
+    },
+    eel: {
+        name: '深海雷電鰻',
+        points: 900,
+        speed: 1.5,
+        width: 150,
+        height: 46,
+        health: 3,
+        color: '#00ffd0',
+        scale: 1.0,
+        behavior: 'glide'
+    },
     turtle: {
         name: '翡翠上古神龜',
         points: 1500,
@@ -466,6 +544,18 @@ const FISH_TYPES = {
         height: 150,
         health: 45,
         color: '#00f3ff',
+        scale: 1.0,
+        isBoss: true,
+        bossStyle: 'sprite'
+    },
+    dragonboss: { // 全身寫實黃金龍 Boss (取代舊版線段龍身)
+        name: 'Boss 霓虹黃金龍',
+        points: 5000,
+        speed: 0.55,
+        width: 320,
+        height: 180,
+        health: 30,
+        color: '#ffd700',
         scale: 1.0,
         isBoss: true,
         bossStyle: 'sprite'
@@ -1612,6 +1702,30 @@ class Game {
         document.getElementById('btn-double').addEventListener('click', (e) => { e.stopPropagation(); this.useDouble(); });
 
         window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // 🔒 全面封鎖瀏覽器縮放手勢，避免誤觸拖拉放大導致控制不準
+        ['gesturestart', 'gesturechange', 'gestureend'].forEach(evt => {
+            document.addEventListener(evt, (e) => e.preventDefault(), { passive: false });
+        });
+        document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
+        // 多指觸控（捏合）一律阻止預設行為
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1) e.preventDefault();
+        }, { passive: false });
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 1) e.preventDefault();
+        }, { passive: false });
+        // 快速連點觸發的 iOS 雙擊縮放
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = Date.now();
+            if (now - lastTouchEnd < 320) e.preventDefault();
+            lastTouchEnd = now;
+        }, { passive: false });
+        // 鍵盤/滾輪縮放 (桌機誤觸 Ctrl+滾輪)
+        window.addEventListener('wheel', (e) => {
+            if (e.ctrlKey) e.preventDefault();
+        }, { passive: false });
     }
 
     start() {
@@ -1723,7 +1837,11 @@ class Game {
         this.activeEvent = 'BOSS';
 
         // 隨機挑選 Boss：霓虹黃金龍 或 深淵霓虹巨鯨
-        const bossType = Math.random() < 0.5 ? 'dragon' : 'whale';
+        // 全身龍圖載入成功時使用寫實貼圖 Boss，否則退回舊版龍頭+龍身；
+        // 鯨魚圖未載入時不出鯨魚 Boss，避免出現線條輪廓
+        const candidates = [IMAGES.dragonboss ? 'dragonboss' : 'dragon'];
+        if (IMAGES.whale) candidates.push('whale');
+        const bossType = candidates[Math.floor(Math.random() * candidates.length)];
         const bossName = FISH_TYPES[bossType].name;
         const bossPoints = FISH_TYPES[bossType].points;
         this.showEventBanner(`警告：${bossName}降臨！`);
@@ -2168,30 +2286,41 @@ class Game {
     spawnFish() {
         if (this.gameState !== 'PLAYING') return;
 
-        // 12 種海洋生物出沒機率表（越稀有分數越高）
+        // 14 種海洋生物出沒機率表（越稀有分數越高）
         const rand = Math.random();
         let type = 'goldfish';
 
-        if (rand > 0.975) {
+        if (rand > 0.978) {
             type = 'turtle';
-        } else if (rand > 0.945) {
+        } else if (rand > 0.952) {
             type = 'shark';
-        } else if (rand > 0.905) {
+        } else if (rand > 0.922) {
+            type = 'eel';
+        } else if (rand > 0.888) {
             type = 'swordfish';
-        } else if (rand > 0.855) {
+        } else if (rand > 0.848) {
             type = 'mantaray';
-        } else if (rand > 0.795) {
+        } else if (rand > 0.804) {
+            type = 'octopus';
+        } else if (rand > 0.755) {
             type = 'anglerfish';
-        } else if (rand > 0.725) {
+        } else if (rand > 0.70) {
             type = 'pufferfish';
-        } else if (rand > 0.645) {
+        } else if (rand > 0.638) {
             type = 'lionfish';
-        } else if (rand > 0.55) {
+        } else if (rand > 0.572) {
+            type = 'seahorse';
+        } else if (rand > 0.50) {
             type = 'jellyfish';
-        } else if (rand > 0.40) {
+        } else if (rand > 0.36) {
             type = 'bluetang';
-        } else if (rand > 0.20) {
+        } else if (rand > 0.18) {
             type = 'clownfish';
+        }
+
+        // 圖片尚未載入成功的魚種不生成，改用金魚替補
+        if (!IMAGES[type]) {
+            type = IMAGES.goldfish ? 'goldfish' : type;
         }
 
         const side = Math.random() < 0.5 ? -60 : this.width + 60;
