@@ -4,6 +4,133 @@
    ========================================================================== */
 
 // ==========================================================================
+// 0. 寫實魚類圖片資產加載與處理 (Asset Loader)
+// ==========================================================================
+const IMAGES = {};
+const IMAGE_PATHS = {
+    goldfish: 'assets/goldfish.jpg',
+    clownfish: 'assets/clownfish.jpg',
+    bluetang: 'assets/bluetang.jpg',
+    anglerfish: 'assets/anglerfish.jpg',
+    shark: 'assets/shark.jpg',
+    dragon: 'assets/dragon.jpg'
+};
+
+function loadAndProcessAssets(callback) {
+    let loadedCount = 0;
+    const keys = Object.keys(IMAGE_PATHS);
+    const totalCount = keys.length;
+    
+    // 獲取開始按鈕以展示加載進度
+    const startBtn = document.getElementById('btn-start');
+    if (startBtn) {
+        startBtn.disabled = true;
+        startBtn.textContent = '載入寫實魚群 (0%)...';
+    }
+
+    keys.forEach(key => {
+        const img = new Image();
+        img.src = IMAGE_PATHS[key];
+        img.onload = () => {
+            // 1. 將圖片繪製到臨時畫布
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            
+            // 2. 去除黑色背景 (R < 15, G < 15, B < 15) 轉換為透明
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i+1];
+                const b = data[i+2];
+                if (r < 15 && g < 15 && b < 15) {
+                    data[i+3] = 0; // Alpha 設為 0 透明
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+            
+            // 3. 裁剪四周空白/透明邊框，讓魚的碰撞體積更精準
+            const croppedCanvas = cropTransparentCanvas(canvas);
+            IMAGES[key] = croppedCanvas; // 存入全局圖片庫
+            
+            loadedCount++;
+            const pct = Math.floor((loadedCount / totalCount) * 100);
+            if (startBtn) {
+                startBtn.textContent = `載入寫實魚群 (${pct}%)...`;
+            }
+            
+            if (loadedCount === totalCount) {
+                if (startBtn) {
+                    startBtn.disabled = false;
+                    startBtn.textContent = '開始遊戲';
+                }
+                if (callback) callback();
+            }
+        };
+        img.onerror = () => {
+            console.error('Failed to load asset:', IMAGE_PATHS[key]);
+            loadedCount++;
+            if (loadedCount === totalCount) {
+                if (startBtn) {
+                    startBtn.disabled = false;
+                    startBtn.textContent = '開始遊戲';
+                }
+                if (callback) callback();
+            }
+        };
+    });
+}
+
+// 輔助函式：自動裁剪畫布中的透明邊界
+function cropTransparentCanvas(canvas) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    
+    let minX = w, maxX = 0, minY = h, maxY = 0;
+    
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const alpha = data[(y * w + x) * 4 + 3];
+            if (alpha > 0) { // 非透明像素
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+    
+    // 如果圖片為空
+    if (maxX < minX || maxY < minY) {
+        return canvas;
+    }
+    
+    // 加回 2 像素緩衝區
+    minX = Math.max(0, minX - 2);
+    minY = Math.max(0, minY - 2);
+    maxX = Math.min(w - 1, maxX + 2);
+    maxY = Math.min(h - 1, maxY + 2);
+    
+    const cropW = maxX - minX + 1;
+    const cropH = maxY - minY + 1;
+    
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = cropW;
+    cropCanvas.height = cropH;
+    const cropCtx = cropCanvas.getContext('2d');
+    cropCtx.drawImage(canvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+    
+    return cropCanvas;
+}
+
+
+// ==========================================================================
 // 1. Web Audio API 音效合成器 (SoundController)
 // ==========================================================================
 class SoundController {
@@ -21,7 +148,6 @@ class SoundController {
         }
     }
 
-    // 播放發射子彈音效 (氣泡上升/能量充能聲)
     playShoot() {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
@@ -42,12 +168,10 @@ class SoundController {
         osc.stop(now + 0.16);
     }
 
-    // 播放捕獲成功/金幣音效 (雙音階清脆響鈴)
     playCoin() {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
         
-        // 第一個高音
         const osc1 = this.ctx.createOscillator();
         const gain1 = this.ctx.createGain();
         osc1.type = 'sine';
@@ -61,12 +185,10 @@ class SoundController {
         osc1.stop(now + 0.3);
     }
 
-    // 播放炸彈爆炸音效 (低頻白噪音爆炸)
     playExplosion() {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
         
-        // 1. 低頻正弦波掃描
         const osc = this.ctx.createOscillator();
         const oscGain = this.ctx.createGain();
         osc.type = 'sine';
@@ -79,8 +201,7 @@ class SoundController {
         osc.start(now);
         osc.stop(now + 0.65);
 
-        // 2. 噪聲緩衝區模擬爆炸碎裂聲
-        const bufferSize = this.ctx.sampleRate * 0.5; // 0.5秒
+        const bufferSize = this.ctx.sampleRate * 0.5;
         const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
         const data = buffer.getChannelData(0);
         for (let i = 0; i < bufferSize; i++) {
@@ -90,7 +211,6 @@ class SoundController {
         const noise = this.ctx.createBufferSource();
         noise.buffer = buffer;
 
-        // 噪聲濾波器
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(400, now);
@@ -108,7 +228,6 @@ class SoundController {
         noise.stop(now + 0.5);
     }
 
-    // 播放雷射發射音效
     playLaser() {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
@@ -119,10 +238,9 @@ class SoundController {
         osc.frequency.setValueAtTime(800, now);
         osc.frequency.exponentialRampToValueAtTime(100, now + 0.8);
 
-        // 加上低頻震盪 (LFO)
         const lfo = this.ctx.createOscillator();
         const lfoGain = this.ctx.createGain();
-        lfo.frequency.value = 30; // 30Hz
+        lfo.frequency.value = 30;
         lfoGain.gain.value = 50; 
         lfo.connect(lfoGain);
         lfoGain.connect(osc.frequency);
@@ -139,7 +257,6 @@ class SoundController {
         osc.stop(now + 0.8);
     }
 
-    // 播放冰凍音效 (高音水晶撞擊聲)
     playFreeze() {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
@@ -160,11 +277,10 @@ class SoundController {
         osc.stop(now + 0.6);
     }
 
-    // 播放雙倍得分音效 (輕快上揚音階)
     playDouble() {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
-        const notes = [261.63, 329.63, 392.00, 523.25]; // C4, E4, G4, C5
+        const notes = [261.63, 329.63, 392.00, 523.25];
         
         notes.forEach((freq, idx) => {
             const osc = this.ctx.createOscillator();
@@ -183,7 +299,6 @@ class SoundController {
         });
     }
 
-    // 播放隨機背景氣泡咕嚕聲
     playBubblePop() {
         if (this.isMuted || !this.ctx) return;
         const now = this.ctx.currentTime;
@@ -212,69 +327,63 @@ const soundCtrl = new SoundController();
 // ==========================================================================
 const FISH_TYPES = {
     goldfish: {
-        name: '霓虹黃金魚',
+        name: '黃金錦鯉魚',
         points: 50,
-        speed: 1.8,
-        width: 45,
-        height: 25,
+        speed: 1.7,
+        width: 50,
+        height: 28,
         health: 1,
         color: '#ffb800',
-        glowColor: 'rgba(255, 184, 0, 0.4)',
         scale: 1.0
     },
     clownfish: {
-        name: '霓虹小丑魚',
+        name: '寫實小丑魚',
         points: 100,
-        speed: 1.4,
-        width: 55,
-        height: 32,
+        speed: 1.3,
+        width: 60,
+        height: 36,
         health: 1,
         color: '#ff5c00',
-        glowColor: 'rgba(255, 92, 0, 0.4)',
         scale: 1.0
     },
     bluetang: {
-        name: '藍唐王魚',
+        name: '藍唐王醫生魚',
         points: 200,
-        speed: 1.5,
-        width: 65,
-        height: 40,
+        speed: 1.4,
+        width: 70,
+        height: 42,
         health: 1,
         color: '#0066ff',
-        glowColor: 'rgba(0, 102, 255, 0.5)',
         scale: 1.0
     },
     anglerfish: {
-        name: '深海鮟鱇魚',
+        name: '深海大口鮟鱇',
         points: 500,
-        speed: 1.0,
-        width: 80,
-        height: 60,
+        speed: 0.95,
+        width: 85,
+        height: 65,
         health: 3,
         color: '#a000ff',
-        glowColor: 'rgba(160, 0, 255, 0.5)',
         scale: 1.0
     },
     shark: {
-        name: '深海狂暴巨鯊',
+        name: '狂暴大白鯊',
         points: 1000,
-        speed: 0.8,
-        width: 150,
-        height: 80,
+        speed: 0.75,
+        width: 155,
+        height: 85,
         health: 6,
         color: '#00f0ff',
-        glowColor: 'rgba(0, 240, 255, 0.6)',
         scale: 1.0
     },
     dragon: { // Boss 魚
         name: 'Boss 霓虹黃金龍',
         points: 5000,
-        speed: 0.6,
-        width: 65, // 頭部半徑大小
-        height: 65,
+        speed: 0.55,
+        width: 75, // 龍頭寬度
+        height: 75, // 龍頭高度
         health: 30,
         color: '#ffd700',
-        glowColor: 'rgba(255, 215, 0, 0.8)',
         scale: 1.0,
         isBoss: true
     }
@@ -296,21 +405,19 @@ class Fish {
         this.health = config.health;
         this.maxHealth = config.health;
         this.color = config.color;
-        this.glowColor = config.glowColor;
         this.isBoss = !!config.isBoss;
 
         this.x = startX;
         this.y = startY;
         this.vx = (startX < 0) ? (this.speed) : (-this.speed);
-        this.vy = (Math.random() - 0.5) * 0.3; // 上下微幅飄移
+        this.vy = (Math.random() - 0.5) * 0.25;
         
         this.angle = Math.atan2(this.vy, this.vx);
-        this.swimCycle = Math.random() * 100; // 尾巴擺動相位
+        this.swimCycle = Math.random() * 100;
         this.isDead = false;
-        this.deathTimer = 0; // 死亡動畫計時
+        this.deathTimer = 0;
         this.fadeAlpha = 1.0;
 
-        // Boss 霓虹龍的節點跟隨記錄 (尾隨算法)
         if (this.isBoss) {
             this.segments = [];
             this.segmentCount = 14; // 14節龍身
@@ -324,23 +431,23 @@ class Fish {
     update(isFrozen) {
         if (this.isDead) {
             this.deathTimer += 1;
-            this.fadeAlpha = Math.max(0, 1 - this.deathTimer / 30); // 30幀漸隱
-            this.y += 0.4; // 緩慢下沉
-            this.angle += 0.05; // 旋轉死亡效果
+            this.fadeAlpha = Math.max(0, 1 - this.deathTimer / 30);
+            this.y += 0.45;
+            this.angle += 0.04;
             return;
         }
 
         if (isFrozen) {
-            return; // 冰凍時完全不動
+            return;
         }
 
         if (this.isBoss) {
-            this.swimCycle += 0.035;
-            this.vy = Math.sin(this.swimCycle) * 1.6;
+            this.swimCycle += 0.04;
+            this.vy = Math.sin(this.swimCycle) * 1.5;
         } else {
             this.swimCycle += 0.12;
             if (Math.random() < 0.015) {
-                this.vy = (Math.random() - 0.5) * 0.7;
+                this.vy = (Math.random() - 0.5) * 0.6;
             }
         }
 
@@ -348,11 +455,10 @@ class Fish {
         this.y += this.vy;
         this.angle = Math.atan2(this.vy, this.vx);
 
-        // 更新 Boss 身體節點的座標與角度
         if (this.isBoss) {
             let prevX = this.x;
             let prevY = this.y;
-            const distBetweenSegments = 24;
+            const distBetweenSegments = 23;
             
             for (let i = 0; i < this.segmentCount; i++) {
                 const seg = this.segments[i];
@@ -385,504 +491,107 @@ class Fish {
         ctx.restore();
     }
 
-    // 繪製寫實精美魚類 (立體漸層、花紋細節與精緻眼部)
+    // 繪製寫實魚 (使用真實生成的圖片 assets，並套用即時波動網格動畫)
     drawNormalFish(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
 
-        // 面朝左側時進行水平鏡像，防止魚翻肚
         const facingLeft = this.vx < 0;
         if (facingLeft) {
             ctx.scale(1, -1);
         }
 
-        // 動態尾巴搖擺相位
-        const tailSwing = Math.sin(this.swimCycle) * 0.28;
         const w = this.width;
         const h = this.height;
 
-        // 💡 底部霓虹霓光圈 (柔和漸層陰影，不耗效能)
-        ctx.shadowColor = this.color;
-        ctx.shadowBlur = 16;
+        // 💡 底部霓虹光環背景
+        const auraGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, Math.max(w, h) * 0.68);
+        auraGrad.addColorStop(0, this.color);
+        auraGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = auraGrad;
+        ctx.globalAlpha = 0.28;
+        ctx.beginPath();
+        ctx.arc(0, 0, Math.max(w, h) * 0.68, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.globalAlpha = this.fadeAlpha;
 
-        if (this.typeKey === 'goldfish') {
-            this.drawGoldfishDetail(ctx, w, h, tailSwing);
-        } else if (this.typeKey === 'clownfish') {
-            this.drawClownfishDetail(ctx, w, h, tailSwing);
-        } else if (this.typeKey === 'bluetang') {
-            this.drawBlueTangDetail(ctx, w, h, tailSwing);
-        } else if (this.typeKey === 'anglerfish') {
-            this.drawAnglerfishDetail(ctx, w, h, tailSwing);
-        } else if (this.typeKey === 'shark') {
-            this.drawSharkDetail(ctx, w, h, tailSwing);
+        // 💡 繪製精美波動寫實圖片
+        const sprite = IMAGES[this.typeKey];
+        if (sprite) {
+            const swimCycle = this.isDead ? 0 : this.swimCycle;
+            this.drawWavySprite(ctx, sprite, w, h, swimCycle);
         }
 
         ctx.restore();
 
         // 繪製血量條
         if (this.health < this.maxHealth && this.health > 0) {
-            this.drawHealthBar(ctx, this.x - w/2, this.y - h * 0.7, w);
+            this.drawHealthBar(ctx, this.x - w/2, this.y - h * 0.65, w);
         }
     }
 
-    // 1. 霓虹黃金魚 (金光鱗片、長擺尾巴與精美漸層)
-    drawGoldfishDetail(ctx, w, h, tailSwing) {
-        // 大尾鰭 (雙層半透明飄逸感)
-        ctx.save();
-        ctx.translate(-w * 0.35, 0);
-        ctx.rotate(tailSwing * 1.5);
-        const tailGrad = ctx.createLinearGradient(-w * 0.5, 0, 0, 0);
-        tailGrad.addColorStop(0, 'rgba(255, 60, 0, 0.9)');
-        tailGrad.addColorStop(0.5, 'rgba(255, 184, 0, 0.7)');
-        tailGrad.addColorStop(1, 'rgba(255, 230, 0, 0.2)');
-        ctx.fillStyle = tailGrad;
+    // 💡 核心演算法：將寫實魚切成 N 個垂直細條，套用正弦波偏移，製造極其自然的 3D 擺尾游動動畫！
+    drawWavySprite(ctx, canvas, width, height, swimCycle) {
+        const numSlices = 15;
+        const sliceWidth = canvas.width / numSlices;
+        const drawSliceWidth = width / numSlices;
         
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.bezierCurveTo(-w * 0.3, -h * 0.9, -w * 0.6, -h * 1.1, -w * 0.7, -h * 0.7);
-        ctx.bezierCurveTo(-w * 0.55, -h * 0.2, -w * 0.55, h * 0.2, -w * 0.7, h * 0.7);
-        ctx.bezierCurveTo(-w * 0.6, h * 1.1, -w * 0.3, h * 0.9, 0, 0);
-        ctx.fill();
-        
-        // 尾翼紋理線
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 1;
-        for (let i = -3; i <= 3; i++) {
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.quadraticCurveTo(-w * 0.3, i * h * 0.2, -w * 0.62, i * h * 0.22);
-            ctx.stroke();
+        for (let i = 0; i < numSlices; i++) {
+            const progress = i / numSlices; // 從尾巴(0)到頭部(1)
+            
+            // 魚頭擺幅小，魚尾擺幅大 (1 - progress)
+            const waveAmp = (1 - progress) * 8.5; 
+            const waveOffset = Math.sin(swimCycle - progress * Math.PI * 1.6) * waveAmp;
+            
+            ctx.drawImage(
+                canvas,
+                i * sliceWidth, 0, sliceWidth, canvas.height, // 來源裁切
+                -width/2 + i * drawSliceWidth, -height/2 + waveOffset, drawSliceWidth, height // 目標繪製
+            );
         }
-        ctx.restore();
-
-        // 魚身主體 (金黃立體徑向漸層)
-        const bodyGrad = ctx.createRadialGradient(w * 0.15, -h * 0.1, 2, 0, 0, w * 0.5);
-        bodyGrad.addColorStop(0, '#ffffff');
-        bodyGrad.addColorStop(0.3, '#ffcc00');
-        bodyGrad.addColorStop(0.8, '#ff5100');
-        bodyGrad.addColorStop(1, '#9b1c00');
-        ctx.fillStyle = bodyGrad;
-        
-        ctx.beginPath();
-        ctx.moveTo(w * 0.45, 0);
-        ctx.bezierCurveTo(w * 0.25, -h * 0.65, -w * 0.2, -h * 0.6, -w * 0.4, 0);
-        ctx.bezierCurveTo(-w * 0.2, h * 0.6, w * 0.25, h * 0.65, w * 0.45, 0);
-        ctx.fill();
-
-        // 魚背鰭 & 腹鰭 (紅色半透明)
-        ctx.fillStyle = 'rgba(255, 60, 0, 0.85)';
-        ctx.beginPath();
-        ctx.moveTo(0, -h * 0.38);
-        ctx.quadraticCurveTo(-w * 0.15, -h * 0.9, -w * 0.3, -h * 0.5);
-        ctx.lineTo(-w * 0.12, -h * 0.3);
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(-w * 0.1, h * 0.38);
-        ctx.quadraticCurveTo(-w * 0.2, h * 0.7, -w * 0.3, h * 0.4);
-        ctx.fill();
-
-        // 精緻亮眼睛
-        this.drawRealisticEye(ctx, w * 0.22, -h * 0.12, 5.5, '#ffd700');
     }
 
-    // 2. 霓虹小丑魚 (立體橙色、三道帶黑色邊框的白斑紋與圓潤胸鰭)
-    drawClownfishDetail(ctx, w, h, tailSwing) {
-        // 擺動尾巴
-        ctx.save();
-        ctx.translate(-w * 0.35, 0);
-        ctx.rotate(tailSwing * 1.3);
-        ctx.fillStyle = '#ff5c00';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 1.5;
-        
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(-w * 0.18, -h * 0.5, -w * 0.28, -h * 0.4);
-        ctx.quadraticCurveTo(-w * 0.2, 0, -w * 0.28, h * 0.4);
-        ctx.quadraticCurveTo(-w * 0.18, h * 0.5, 0, 0);
-        ctx.fill();
-        ctx.stroke();
-
-        // 尾部黑邊與白端
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(-w * 0.24, 0, 3, 0, Math.PI*2);
-        ctx.fill();
-        ctx.restore();
-
-        // 魚身主體 (圓潤且色彩飽和)
-        ctx.save();
-        const bodyGrad = ctx.createRadialGradient(w * 0.1, -h * 0.1, 2, 0, 0, w * 0.52);
-        bodyGrad.addColorStop(0, '#ffa600');
-        bodyGrad.addColorStop(0.6, '#ff5c00');
-        bodyGrad.addColorStop(1, '#a62400');
-        ctx.fillStyle = bodyGrad;
-        
-        // 描繪主身路徑
-        ctx.beginPath();
-        ctx.moveTo(w * 0.45, 0);
-        ctx.bezierCurveTo(w * 0.25, -h * 0.65, -w * 0.25, -h * 0.55, -w * 0.42, 0);
-        ctx.bezierCurveTo(-w * 0.25, h * 0.55, w * 0.25, h * 0.65, w * 0.45, 0);
-        ctx.fill();
-        ctx.clip(); // 使用 clip 來只在魚身繪製白色橫帶！這能保證線條邊緣完美契合魚身！
-
-        // 繪製三道標誌性白色條紋 (帶有黑框線)
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 3;
-        ctx.fillStyle = '#ffffff';
-        
-        // 條紋1 (頭部)
-        ctx.beginPath();
-        ctx.ellipse(w * 0.18, 0, w * 0.08, h * 0.7, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        
-        // 條紋2 (身中)
-        ctx.beginPath();
-        ctx.ellipse(-w * 0.06, 0, w * 0.09, h * 0.68, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // 條紋3 (尾前)
-        ctx.beginPath();
-        ctx.ellipse(-w * 0.28, 0, w * 0.05, h * 0.45, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.restore(); // 結束裁剪 clip
-
-        // 外框補描一次黑色邊緣，讓圖形更立體
-        ctx.strokeStyle = '#2b0700';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(w * 0.45, 0);
-        ctx.bezierCurveTo(w * 0.25, -h * 0.65, -w * 0.25, -h * 0.55, -w * 0.42, 0);
-        ctx.bezierCurveTo(-w * 0.25, h * 0.55, w * 0.25, h * 0.65, w * 0.45, 0);
-        ctx.stroke();
-
-        // 圓潤胸鰭 (橘黃黑邊)
-        ctx.fillStyle = '#ffa600';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.ellipse(0, h * 0.2, w * 0.12, h * 0.2, -Math.PI / 6, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // 圓潤背鰭
-        ctx.fillStyle = '#ff5c00';
-        ctx.beginPath();
-        ctx.ellipse(-w * 0.05, -h * 0.45, w * 0.2, h * 0.16, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // 亮眼睛
-        this.drawRealisticEye(ctx, w * 0.24, -h * 0.1, 5, '#ffffff');
-    }
-
-    // 3. 藍唐王魚 (標誌性黑色倒鉤花紋、鮮黃胸鰭與黃色三角尾鰭)
-    drawBlueTangDetail(ctx, w, h, tailSwing) {
-        // 黃色三角尾翼
-        ctx.save();
-        ctx.translate(-w * 0.36, 0);
-        ctx.rotate(tailSwing * 1.4);
-        
-        // 黃色漸變尾部
-        const tailGrad = ctx.createLinearGradient(-w * 0.25, 0, 0, 0);
-        tailGrad.addColorStop(0, '#ffd800');
-        tailGrad.addColorStop(1, '#ff6600');
-        ctx.fillStyle = tailGrad;
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 1;
-
-        ctx.beginPath();
-        ctx.moveTo(0, -h * 0.12);
-        ctx.lineTo(-w * 0.24, -h * 0.5);
-        ctx.quadraticCurveTo(-w * 0.2, 0, -w * 0.24, h * 0.5);
-        ctx.lineTo(0, h * 0.12);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-
-        // 魚身主體 (艷麗藍色徑向漸層)
-        const bodyGrad = ctx.createRadialGradient(w * 0.12, -h * 0.1, 2, 0, 0, w * 0.5);
-        bodyGrad.addColorStop(0, '#00dfff');
-        bodyGrad.addColorStop(0.4, '#0055ff');
-        bodyGrad.addColorStop(0.9, '#000c80');
-        bodyGrad.addColorStop(1, '#00002b');
-        
-        ctx.fillStyle = bodyGrad;
-        ctx.beginPath();
-        ctx.moveTo(w * 0.45, 0);
-        ctx.bezierCurveTo(w * 0.25, -h * 0.65, -w * 0.22, -h * 0.52, -w * 0.4, 0);
-        ctx.bezierCurveTo(-w * 0.22, h * 0.52, w * 0.25, h * 0.65, w * 0.45, 0);
-        ctx.fill();
-
-        // 黑色「調色盤」側身紋路 (寫實藍唐王魚特徵)
-        ctx.fillStyle = '#0a0d1a';
-        ctx.beginPath();
-        ctx.moveTo(-w * 0.28, 0);
-        ctx.bezierCurveTo(-w * 0.2, -h * 0.38, w * 0.05, -h * 0.38, w * 0.12, -h * 0.1);
-        ctx.bezierCurveTo(w * 0.05, h * 0.05, -w * 0.12, -h * 0.15, -w * 0.1, h * 0.2);
-        ctx.bezierCurveTo(-w * 0.18, h * 0.32, -w * 0.28, h * 0.1, -w * 0.28, 0);
-        ctx.fill();
-
-        // 鮮黃色胸鰭
-        ctx.fillStyle = '#ffd800';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.ellipse(-w * 0.05, h * 0.1, w * 0.13, h * 0.12, Math.PI / 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // 藍色大背鰭
-        ctx.fillStyle = '#0055ff';
-        ctx.beginPath();
-        ctx.moveTo(-w * 0.15, -h * 0.4);
-        ctx.quadraticCurveTo(w * 0.05, -h * 0.65, w * 0.22, -h * 0.3);
-        ctx.lineTo(w * 0.1, -h * 0.28);
-        ctx.closePath();
-        ctx.fill();
-
-        // 亮眼睛
-        this.drawRealisticEye(ctx, w * 0.25, -h * 0.12, 5.5, '#00ffff');
-    }
-
-    // 4. 深海鮟鱇魚 (怪異大口、鋒利牙齒、黃色發光頭燈)
-    drawAnglerfishDetail(ctx, w, h, tailSwing) {
-        // 怪異的半透明帶刺尾巴
-        ctx.save();
-        ctx.translate(-w * 0.38, h * 0.05);
-        ctx.rotate(tailSwing * 1.2);
-        ctx.fillStyle = 'rgba(160, 0, 255, 0.45)';
-        ctx.strokeStyle = '#a000ff';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(-w * 0.25, -h * 0.3);
-        ctx.lineTo(-w * 0.18, 0);
-        ctx.lineTo(-w * 0.25, h * 0.3);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-
-        // 鮟鱇魚主體 (暗紫到黑的粗獷立體漸層)
-        const bodyGrad = ctx.createRadialGradient(w * 0.15, -h * 0.05, 2, 0, 0, w * 0.52);
-        bodyGrad.addColorStop(0, '#c75cff');
-        bodyGrad.addColorStop(0.5, '#6a00b0');
-        bodyGrad.addColorStop(0.9, '#24003d');
-        bodyGrad.addColorStop(1, '#0c0014');
-        ctx.fillStyle = bodyGrad;
-
-        ctx.beginPath();
-        ctx.moveTo(w * 0.42, -h * 0.08); // 嘴上緣
-        ctx.bezierCurveTo(w * 0.28, -h * 0.72, -w * 0.22, -h * 0.52, -w * 0.4, h * 0.05);
-        ctx.bezierCurveTo(-w * 0.25, h * 0.58, w * 0.1, h * 0.65, w * 0.38, h * 0.25); // 嘴下緣
-        ctx.lineTo(w * 0.08, h * 0.06); // 裂嘴深處
-        ctx.closePath();
-        ctx.fill();
-
-        // 恐怖的鋸齒狀白色大牙 (繪製多個白色實心三角形)
-        ctx.fillStyle = '#ffffff';
-        ctx.strokeStyle = '#3d0066';
-        ctx.lineWidth = 0.6;
-        
-        // 上排牙
-        const teethUpper = [
-            {x: w * 0.38, y: -h * 0.06, tx: w * 0.36, ty: h * 0.06},
-            {x: w * 0.29, y: -h * 0.03, tx: w * 0.26, ty: h * 0.08},
-            {x: w * 0.20, y: 0,          tx: w * 0.18, ty: h * 0.09},
-            {x: w * 0.12, y: h * 0.03,  tx: w * 0.11, ty: h * 0.1}
-        ];
-        teethUpper.forEach(t => {
-            ctx.beginPath();
-            ctx.moveTo(t.x, t.y);
-            ctx.lineTo(t.tx, t.ty);
-            ctx.lineTo(t.x - 4, t.y);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-        });
-
-        // 下排牙 (朝上凸出)
-        const teethLower = [
-            {x: w * 0.36, y: h * 0.23, tx: w * 0.34, ty: -h * 0.02},
-            {x: w * 0.27, y: h * 0.18, tx: w * 0.25, ty: -h * 0.03},
-            {x: w * 0.18, y: h * 0.12, tx: w * 0.17, ty: -h * 0.01}
-        ];
-        teethLower.forEach(t => {
-            ctx.beginPath();
-            ctx.moveTo(t.x, t.y);
-            ctx.lineTo(t.tx, t.ty);
-            ctx.lineTo(t.x - 3, t.y);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-        });
-
-        // 懸吊的發光燈泡
-        ctx.save();
-        ctx.strokeStyle = '#a000ff';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(w * 0.08, -h * 0.28);
-        ctx.quadraticCurveTo(w * 0.36, -h * 0.72, w * 0.34, -h * 0.85); // 燈泡吊桿
-        ctx.stroke();
-
-        // 燈泡本體 (霓虹黃光發光核心)
-        const bulbGrad = ctx.createRadialGradient(w * 0.34, -h * 0.85, 1, w * 0.34, -h * 0.85, 10);
-        bulbGrad.addColorStop(0, '#ffffff');
-        bulbGrad.addColorStop(0.3, '#ffea00');
-        bulbGrad.addColorStop(0.8, 'rgba(255, 234, 0, 0.4)');
-        bulbGrad.addColorStop(1, 'rgba(255, 234, 0, 0)');
-        ctx.fillStyle = bulbGrad;
-        ctx.beginPath();
-        ctx.arc(w * 0.34, -h * 0.85, 11, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        // 綠黃色玻璃眼
-        this.drawRealisticEye(ctx, w * 0.15, -h * 0.26, 4.8, '#aaff00');
-    }
-
-    // 5. 深海狂暴巨鯊 (青灰色流線身軀、白色腹部、鯊魚鰓裂、尖銳背鰭)
-    drawSharkDetail(ctx, w, h, tailSwing) {
-        // 大擺幅尾翼
-        ctx.save();
-        ctx.translate(-w * 0.42, 0);
-        ctx.rotate(tailSwing * 1.1);
-        
-        const tailGrad = ctx.createLinearGradient(-w * 0.2, 0, 0, 0);
-        tailGrad.addColorStop(0, '#00f0ff');
-        tailGrad.addColorStop(1, '#005c8a');
-        ctx.fillStyle = tailGrad;
-        ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
-        ctx.lineWidth = 1.5;
-
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(-w * 0.18, -h * 0.75, -w * 0.28, -h * 0.82);
-        ctx.quadraticCurveTo(-w * 0.2, -h * 0.1, -w * 0.26, h * 0.52);
-        ctx.quadraticCurveTo(-w * 0.12, h * 0.1, 0, 0);
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-
-        // 鯊魚背部青灰漸層
-        const backGrad = ctx.createLinearGradient(0, -h * 0.4, 0, h * 0.4);
-        backGrad.addColorStop(0, '#005b7f');
-        backGrad.addColorStop(0.4, '#00b7d6');
-        backGrad.addColorStop(0.7, '#dafbff'); // 腹部漸白
-        backGrad.addColorStop(1, '#ffffff');
-
-        // 畫流線型鯊魚身
-        ctx.fillStyle = backGrad;
-        ctx.beginPath();
-        ctx.moveTo(w * 0.48, -h * 0.05); // 吻部尖端
-        ctx.bezierCurveTo(w * 0.28, -h * 0.52, -w * 0.28, -h * 0.45, -w * 0.45, 0);
-        ctx.bezierCurveTo(-w * 0.28, h * 0.52, w * 0.2, h * 0.58, w * 0.48, -h * 0.05);
-        ctx.fill();
-
-        // 巨型三角背鰭
-        ctx.fillStyle = '#005b7f';
-        ctx.beginPath();
-        ctx.moveTo(-w * 0.02, -h * 0.32);
-        ctx.quadraticCurveTo(-w * 0.1, -h * 0.85, -w * 0.24, -h * 0.72);
-        ctx.quadraticCurveTo(-w * 0.2, -h * 0.3, -w * 0.15, -h * 0.25);
-        ctx.closePath();
-        ctx.fill();
-
-        // 胸鰭
-        ctx.fillStyle = '#006c96';
-        ctx.beginPath();
-        ctx.moveTo(w * 0.08, h * 0.15);
-        ctx.quadraticCurveTo(w * 0.06, h * 0.72, -w * 0.14, h * 0.65);
-        ctx.quadraticCurveTo(-w * 0.08, h * 0.25, -w * 0.02, h * 0.15);
-        ctx.closePath();
-        ctx.fill();
-
-        // 鯊魚鰓裂 (3道暗灰色弧線)
-        ctx.strokeStyle = '#003a52';
-        ctx.lineWidth = 2.2;
-        ctx.lineCap = 'round';
-        for (let i = 0; i < 3; i++) {
-            ctx.beginPath();
-            ctx.arc(w * 0.18 - i * 6, h * 0.02, 10, -Math.PI / 4, Math.PI / 4);
-            ctx.stroke();
-        }
-
-        // 霸氣生氣眼與黑白眼仁
-        this.drawRealisticEye(ctx, w * 0.32, -h * 0.1, 6, '#ff0055');
-    }
-
-    // 公用的精緻寫實眼睛繪製
-    drawRealisticEye(ctx, x, y, radius, irisColor) {
-        ctx.save();
-        // 眼白
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        // 虹膜 (彩色部分)
-        ctx.fillStyle = irisColor;
-        ctx.beginPath();
-        ctx.arc(x + radius * 0.15, y, radius * 0.65, 0, Math.PI * 2);
-        ctx.fill();
-
-        // 瞳孔
-        ctx.fillStyle = '#000000';
-        ctx.beginPath();
-        ctx.arc(x + radius * 0.25, y, radius * 0.35, 0, Math.PI * 2);
-        ctx.fill();
-
-        // 高光點
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(x - radius * 0.22, y - radius * 0.22, radius * 0.2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-    }
-
-    // 6. 繪製 Boss 霓虹黃金龍 (極致華麗的黃金龍頭與鱗片身軀)
+    // 繪製 Boss 霓虹黃金龍 (寫實龍頭 + 龍鱗身軀)
     drawBossDragon(ctx) {
         const radius = this.width * 0.38;
 
-        // 1. 繪製身軀節點 (從尾到頭繪製，實現遮蓋與層次感)
+        // 1. 繪製身軀節點 (黃金漸變立體龍身)
         for (let i = this.segmentCount - 1; i >= 0; i--) {
             const seg = this.segments[i];
-            const sizeRatio = (1 - (i / this.segmentCount) * 0.42); // 身軀遞減
+            const sizeRatio = (1 - (i / this.segmentCount) * 0.45);
             const segRadius = radius * sizeRatio;
 
             ctx.save();
             ctx.translate(seg.x, seg.y);
             ctx.rotate(seg.angle);
 
-            // 💡 霓虹外發光陰影
-            ctx.shadowColor = this.color;
-            ctx.shadowBlur = 18;
+            // 霓虹發光背景
+            const auraGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, segRadius * 1.5);
+            auraGrad.addColorStop(0, this.color);
+            auraGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = auraGrad;
+            ctx.globalAlpha = 0.25;
+            ctx.beginPath();
+            ctx.arc(0, 0, segRadius * 1.5, 0, Math.PI*2);
+            ctx.fill();
 
-            // 雙層立體漸層身軀 (金光閃爍)
+            // 雙層立體漸層身軀
             const bodyGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, segRadius);
             bodyGrad.addColorStop(0, '#ffffff');
             bodyGrad.addColorStop(0.3, '#ffe853');
             bodyGrad.addColorStop(0.7, '#ff8000');
             bodyGrad.addColorStop(1, '#941e00');
             ctx.fillStyle = bodyGrad;
+            ctx.globalAlpha = this.fadeAlpha;
             
             ctx.beginPath();
             ctx.arc(0, 0, segRadius, 0, Math.PI * 2);
             ctx.fill();
 
-            // 龍背刺 / 鰭
+            // 龍背刺
             ctx.fillStyle = '#ff1a00';
-            ctx.shadowBlur = 5;
             ctx.beginPath();
             ctx.moveTo(0, -segRadius);
             ctx.lineTo(-12, -segRadius - 12);
@@ -898,7 +607,7 @@ class Fish {
             ctx.restore();
         }
 
-        // 2. 繪製龍頭
+        // 2. 繪製龍頭 (寫實龍頭貼圖)
         ctx.save();
         ctx.translate(this.x, this.y);
         ctx.rotate(this.angle);
@@ -907,65 +616,42 @@ class Fish {
             ctx.scale(1, -1);
         }
 
-        ctx.shadowColor = '#ffd700';
-        ctx.shadowBlur = 24;
-
-        // 龍角 (立體紅色分叉鹿角)
-        ctx.strokeStyle = '#ff2b00';
-        ctx.lineWidth = 4.5;
-        ctx.lineCap = 'round';
+        // 背後發光
+        const auraGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, radius * 1.8);
+        auraGrad.addColorStop(0, '#ffd700');
+        auraGrad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = auraGrad;
+        ctx.globalAlpha = 0.3;
         ctx.beginPath();
-        // 主角
-        ctx.moveTo(-radius * 0.15, -radius * 0.8);
-        ctx.quadraticCurveTo(-radius * 0.7, -radius * 1.6, -radius * 1.2, -radius * 1.8);
-        // 分叉角1
-        ctx.moveTo(-radius * 0.5, -radius * 1.25);
-        ctx.quadraticCurveTo(-radius * 0.4, -radius * 1.6, -radius * 0.2, -radius * 1.7);
-        // 分叉角2
-        ctx.moveTo(-radius * 0.8, -radius * 1.5);
-        ctx.quadraticCurveTo(-radius * 0.9, -radius * 1.8, -radius * 0.75, -radius * 1.95);
-        ctx.stroke();
-
-        // 龍鬚 (擺動的兩條金色長龍鬚)
-        const whiskersSway = Math.sin(this.swimCycle * 2) * 12;
-        ctx.strokeStyle = '#ff9900';
-        ctx.lineWidth = 3.2;
-        ctx.beginPath();
-        ctx.moveTo(radius * 0.9, radius * 0.15);
-        ctx.bezierCurveTo(radius * 1.4, radius * 0.5, radius * 1.6, radius * 0.6 + whiskersSway, radius * 2.1, radius * 0.4 + whiskersSway);
-        ctx.moveTo(radius * 0.9, -radius * 0.15);
-        ctx.bezierCurveTo(radius * 1.4, -radius * 0.5, radius * 1.6, -radius * 0.6 - whiskersSway, radius * 2.1, -radius * 0.4 - whiskersSway);
-        ctx.stroke();
-
-        // 龍頭主體 (立體黃金漸層)
-        const headGrad = ctx.createRadialGradient(radius * 0.3, -radius * 0.1, 2, 0, 0, radius * 1.1);
-        headGrad.addColorStop(0, '#ffffff');
-        headGrad.addColorStop(0.3, '#ffd700');
-        headGrad.addColorStop(0.8, '#ff6600');
-        headGrad.addColorStop(1, '#a61c00');
-        ctx.fillStyle = headGrad;
-
-        ctx.beginPath();
-        ctx.moveTo(radius * 1.28, 0); // 鼻尖
-        ctx.quadraticCurveTo(radius * 0.9, -radius * 0.7, 0, -radius * 0.72); // 龍額
-        ctx.quadraticCurveTo(-radius * 0.9, -radius * 0.8, -radius * 1.1, 0); // 枕骨
-        ctx.quadraticCurveTo(-radius * 0.85, radius * 0.8, 0, radius * 0.72); // 龍腮
-        ctx.quadraticCurveTo(radius * 0.9, radius * 0.7, radius * 1.28, 0);
-        ctx.closePath();
+        ctx.arc(0, 0, radius * 1.8, 0, Math.PI*2);
         ctx.fill();
+        
+        ctx.globalAlpha = this.fadeAlpha;
 
-        // 威武龍眼 (霸氣紅瞳、眼眶描黑)
-        this.drawRealisticEye(ctx, radius * 0.42, -radius * 0.35, 8.5, '#ff003c');
+        const headW = radius * 2.3;
+        const headH = radius * 2.3;
+        const dragonImg = IMAGES.dragon;
+
+        if (dragonImg) {
+            // 直接渲染寫實生成的龍頭
+            ctx.drawImage(dragonImg, -headW * 0.5, -headH * 0.5, headW, headH);
+        } else {
+            // 備用矢量龍頭
+            ctx.strokeStyle = '#ffd700';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(0, 0, radius, 0, Math.PI*2);
+            ctx.stroke();
+        }
 
         ctx.restore();
 
-        // 3. 繪製 Boss 頂部橫條大血條
+        // 3. 繪製頂部大血條
         if (this.health > 0) {
             this.drawBossHealthBar(ctx);
         }
     }
 
-    // 普通魚血條
     drawHealthBar(ctx, x, y, width) {
         const height = 4.5;
         const pct = Math.max(0, this.health / this.maxHealth);
@@ -977,32 +663,27 @@ class Fish {
         ctx.restore();
     }
 
-    // Boss 專屬頂部大血條
     drawBossHealthBar(ctx) {
-        const barW = ctx.canvas.width * 0.01 * (60 / (window.devicePixelRatio || 1)) || 280; // 寬度適應
+        const barW = ctx.canvas.width * 0.01 * (60 / (window.devicePixelRatio || 1)) || 280;
         const realBarW = Math.min(barW, 400);
         const barH = 10;
-        // 使用 CSS 尺寸繪製
         const x = (ctx.canvas.width / (window.devicePixelRatio || 1) - realBarW) / 2;
         const y = 80;
         const pct = Math.max(0, this.health / this.maxHealth);
 
         ctx.save();
-        // 底色
         ctx.fillStyle = 'rgba(6, 18, 38, 0.7)';
         ctx.strokeStyle = 'rgba(0, 243, 255, 0.3)';
         ctx.lineWidth = 1;
         ctx.fillRect(x, y, realBarW, barH);
         ctx.strokeRect(x, y, realBarW, barH);
 
-        // 血條漸變
         const bloodGrad = ctx.createLinearGradient(x, 0, x + realBarW, 0);
         bloodGrad.addColorStop(0, '#ff007b');
         bloodGrad.addColorStop(1, '#ffd700');
         ctx.fillStyle = bloodGrad;
         ctx.fillRect(x, y, realBarW * pct, barH);
 
-        // 文字
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 12px Outfit';
         ctx.textAlign = 'center';
@@ -1013,7 +694,6 @@ class Fish {
         ctx.restore();
     }
 
-    // 碰撞體積判定 (與圓形網碰撞)
     checkCollision(netX, netY, netRadius) {
         if (this.isDead) return false;
         
@@ -1026,7 +706,6 @@ class Fish {
             return true;
         }
 
-        // 如果是 Boss，額外檢查每一個身軀節點是否在捕魚網內
         if (this.isBoss) {
             for (let i = 0; i < this.segmentCount; i++) {
                 const seg = this.segments[i];
@@ -1050,8 +729,8 @@ class Cannon {
     constructor(width, height) {
         this.x = width / 2;
         this.y = height;
-        this.angle = 0; // 弧度
-        this.recoil = 0; // 後座力伸縮像素
+        this.angle = 0;
+        this.recoil = 0;
         this.width = 44;
         this.height = 70;
     }
@@ -1077,11 +756,10 @@ class Cannon {
     draw(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle + Math.PI / 2); // 轉向垂直向上
+        ctx.rotate(this.angle + Math.PI / 2);
 
         const rectLength = this.height - this.recoil;
 
-        // 1. 砲管外發光
         ctx.strokeStyle = '#00f3ff';
         ctx.lineWidth = 14;
         ctx.lineCap = 'round';
@@ -1091,7 +769,6 @@ class Cannon {
         ctx.lineTo(0, -rectLength);
         ctx.stroke();
 
-        // 2. 砲管主體
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 8;
         ctx.globalAlpha = 0.9;
@@ -1100,13 +777,11 @@ class Cannon {
         ctx.lineTo(0, -rectLength);
         ctx.stroke();
 
-        // 3. 雙槍管側翼
         ctx.fillStyle = '#9d00ff';
         ctx.globalAlpha = 0.5;
         ctx.fillRect(-14, -rectLength * 0.6, 6, rectLength * 0.5);
         ctx.fillRect(8, -rectLength * 0.6, 6, rectLength * 0.5);
 
-        // 4. 砲台底座 (半圓)
         ctx.fillStyle = 'rgba(6, 18, 38, 0.9)';
         ctx.strokeStyle = '#00f3ff';
         ctx.lineWidth = 3;
@@ -1116,7 +791,6 @@ class Cannon {
         ctx.fill();
         ctx.stroke();
 
-        // 5. 底座內霓虹核心
         ctx.fillStyle = '#ff007b';
         ctx.beginPath();
         ctx.arc(0, 10, 8, Math.PI, 0);
@@ -1134,7 +808,6 @@ class Bullet {
         this.vx = Math.cos(angle) * this.speed;
         this.vy = Math.sin(angle) * this.speed;
         
-        // 子彈飛行終點
         this.targetX = targetX;
         this.targetY = targetY;
         
@@ -1153,12 +826,10 @@ class Bullet {
         this.y += this.vy;
         this.distTraveled += this.speed;
 
-        // 如果到達點擊位置附近，引爆
         if (this.distTraveled >= this.totalDist - 6) {
             this.isDead = true;
         }
 
-        // 邊界判定
         if (this.x < -10 || this.x > width + 10 || this.y < -10 || this.y > height + 10) {
             this.isDead = true;
         }
@@ -1182,9 +853,6 @@ class Bullet {
     }
 }
 
-// ==========================================================================
-// 5. 捕魚能量網與爆裂特效 (Net Class)
-// ==========================================================================
 class Net {
     constructor(x, y, scale = 1.0, isLaser = false) {
         this.x = x;
@@ -1254,14 +922,11 @@ class Net {
     }
 }
 
-// ==========================================================================
-// 6. 粒子與文字特效 (Particles & FloatingText)
-// ==========================================================================
 class Particle {
     constructor(x, y, type = 'bubble', color = '#ffffff') {
         this.x = x;
         this.y = y;
-        this.type = type; // 'bubble', 'gold', 'spark', 'ice'
+        this.type = type;
         this.color = color;
         this.isDead = false;
 
@@ -1331,7 +996,7 @@ class Particle {
 
                 if (dist < 15) {
                     this.isDead = true;
-                    return true; // 告知外部生成觸達回饋
+                    return true;
                 }
 
                 const speed = 14;
@@ -1444,8 +1109,9 @@ class FloatingText {
     }
 }
 
+
 // ==========================================================================
-// 7. 遊戲核心邏輯控制器 (Game Controller)
+// 5. 遊戲核心邏輯控制器 (Game Controller)
 // ==========================================================================
 class Game {
     constructor() {
@@ -1475,21 +1141,17 @@ class Game {
         this.isDoubleScore = false;
         this.doubleScoreTimer = 0;
 
-        // CSS 邏輯維度 (全解析度適配核心)
         this.width = window.innerWidth;
         this.height = window.innerHeight;
 
-        // 實體陣列
         this.fishList = [];
         this.bulletList = [];
         this.netList = [];
         this.particleList = [];
         this.textList = [];
 
-        // 砲台
         this.cannon = null;
 
-        // 技能冷卻管理
         this.cooldowns = {
             freeze: { duration: 15, current: 0 },
             laser: { duration: 20, current: 0 },
@@ -1524,7 +1186,6 @@ class Game {
         this.particleList = [];
         this.textList = [];
 
-        // 重置冷卻
         Object.keys(this.cooldowns).forEach(k => {
             this.cooldowns[k].current = 0;
             const overlay = document.getElementById(`cd-${k}`);
@@ -1533,7 +1194,6 @@ class Game {
             if (btn) btn.classList.remove('cooldown', 'active-skill');
         });
 
-        // 初始化砲台 (使用邏輯寬度與高度)
         this.cannon = new Cannon(this.width, this.height);
         
         for (let i = 0; i < 20; i++) {
@@ -1550,26 +1210,18 @@ class Game {
     }
 
     resize() {
-        // 1. 取得最新邏輯視口尺寸
         const cssWidth = window.innerWidth;
         const cssHeight = window.innerHeight;
-
-        // 2. 取得設備像素比
         const dpr = window.devicePixelRatio || 1;
 
-        // 3. 設定 Canvas 實體像素大小 (防止高解析度屏模糊)
         this.canvas.width = cssWidth * dpr;
         this.canvas.height = cssHeight * dpr;
-
-        // 4. 設定 Canvas 的 CSS Style 大小 (保證不被擠壓变形)
         this.canvas.style.width = cssWidth + 'px';
         this.canvas.style.height = cssHeight + 'px';
 
-        // 5. 保存邏輯寬高供遊戲更新邏輯使用 (完美解決 iPhone 17 Viewport 越界問題)
         this.width = cssWidth;
         this.height = cssHeight;
 
-        // 6. 重置縮放，縮放背景繪製 Context
         this.ctx.resetTransform();
         this.ctx.scale(dpr, dpr);
         
@@ -1577,7 +1229,6 @@ class Game {
             this.cannon.resize(this.width, this.height);
         }
 
-        // 重新獲取計分板的位置
         const scoreBox = document.querySelector('.score-box');
         if (scoreBox) {
             const rect = scoreBox.getBoundingClientRect();
@@ -1593,25 +1244,21 @@ class Game {
     initEvents() {
         window.addEventListener('resize', () => this.resize());
 
-        // 開始按鈕
         document.getElementById('btn-start').addEventListener('click', (e) => {
             e.stopPropagation();
             soundCtrl.init();
             this.start();
         });
 
-        // 重新開始按鈕
         document.getElementById('btn-restart').addEventListener('click', (e) => {
             e.stopPropagation();
             soundCtrl.init();
             this.start();
         });
 
-        // 移動端防抖與事件註冊
         this.canvas.addEventListener('touchstart', (e) => this.handleTap(e), { passive: false });
         this.canvas.addEventListener('mousedown', (e) => this.handleTap(e));
 
-        // 技能點擊
         document.getElementById('btn-freeze').addEventListener('click', (e) => { e.stopPropagation(); this.useFreeze(); });
         document.getElementById('btn-laser').addEventListener('click', (e) => { e.stopPropagation(); this.useLaser(); });
         document.getElementById('btn-bomb').addEventListener('click', (e) => { e.stopPropagation(); this.useBomb(); });
@@ -1694,7 +1341,7 @@ class Game {
         this.activeEvent = 'TIDE';
         this.eventDuration = 10;
 
-        this.showEventBanner('魚潮來襲！大批霓虹魚群快速出沒！');
+        this.showEventBanner('魚潮來襲！大批寫實魚群快速出沒！');
         
         const tideInterval = setInterval(() => {
             if (this.gameState !== 'PLAYING' || this.eventDuration <= 0) {
@@ -1808,7 +1455,6 @@ class Game {
             clientY = e.clientY;
         }
 
-        // 避免點擊到技能面板欄
         const panel = document.getElementById('skills-panel');
         const panelRect = panel.getBoundingClientRect();
         if (clientX >= panelRect.left && clientX <= panelRect.right &&
@@ -1816,7 +1462,6 @@ class Game {
             return;
         }
 
-        // 避免點擊頂部計分板
         if (clientY < 80) return;
 
         if (this.isLaserActive) {
@@ -1830,7 +1475,6 @@ class Game {
     fireBullet(targetX, targetY) {
         if (!this.cannon) return;
 
-        // 用 CSS 邏輯像素點進行砲管轉向
         this.cannon.updateAngle(targetX, targetY);
         this.cannon.recoil = 15;
 
@@ -1864,7 +1508,6 @@ class Game {
                 fish.health -= damage;
                 caughtSomething = true;
 
-                // 產生擊中火花
                 for (let k = 0; k < 6; k++) {
                     this.particleList.push(new Particle(fish.x, fish.y, 'spark', fish.color));
                 }
@@ -2229,6 +1872,41 @@ class Game {
         this.ctx.restore();
     }
 
+    // 當處於首頁或結束頁時，依然維持背景動畫的平滑渲染
+    drawStaticOrOverlayBackground() {
+        this.ctx.clearRect(0, 0, this.width, this.height);
+        
+        const bgGrad = this.ctx.createLinearGradient(0, 0, 0, this.height);
+        bgGrad.addColorStop(0, '#020713');
+        bgGrad.addColorStop(0.5, '#051126');
+        bgGrad.addColorStop(1, '#1b0f2e');
+        this.ctx.fillStyle = bgGrad;
+        this.ctx.fillRect(0, 0, this.width, this.height);
+
+        this.drawSeaweed();
+        this.drawSunRays();
+
+        // 背景飄逸泡泡
+        if (Math.random() < 0.05) {
+            this.particleList.push(new Particle(
+                Math.random() * this.width,
+                this.height + 10,
+                'bubble'
+            ));
+        }
+        const dummyHud = { x: 0, y: 0, w: 0, h: 0 };
+        for (let i = this.particleList.length - 1; i >= 0; i--) {
+            const part = this.particleList[i];
+            if (part.type === 'bubble') {
+                part.update(dummyHud);
+                part.draw(this.ctx);
+            }
+            if (part.isDead) {
+                this.particleList.splice(i, 1);
+            }
+        }
+    }
+
     drawSunRays() {
         this.sunRaysPhase += 0.004;
         this.ctx.save();
@@ -2356,6 +2034,9 @@ class Game {
         if (this.gameState === 'PLAYING') {
             this.update();
             this.draw();
+        } else {
+            // 在開始/結束畫面也維持海水光影動畫
+            this.drawStaticOrOverlayBackground();
         }
         requestAnimationFrame(() => this.loop());
     }
@@ -2363,5 +2044,7 @@ class Game {
 
 window.addEventListener('DOMContentLoaded', () => {
     const game = new Game();
-    game.loop();
+    loadAndProcessAssets(() => {
+        game.loop();
+    });
 });
