@@ -35,7 +35,8 @@ const IMAGE_FACING = {
     bluetang: 'left',
     anglerfish: 'left',
     shark: 'left',
-    dragon: 'left'
+    dragon: 'left',
+    octopus: 'left'
     // 未列出的圖預設朝右
 };
 
@@ -672,8 +673,10 @@ class Fish {
 
         this.x += this.vx;
         this.y += this.vy;
-        // 水母身體保持直立，其餘魚類朝游動方向
-        const tiltFactor = this.behavior === 'drift' ? 0.15 : 1;
+        // 水母身體保持直立、大型貼圖 Boss 只微幅傾斜，其餘魚類朝游動方向
+        let tiltFactor = 1;
+        if (this.behavior === 'drift') tiltFactor = 0.15;
+        if (this.isBoss && this.bossStyle === 'sprite') tiltFactor = 0.25;
         this.angle = Math.atan2(this.vy * tiltFactor, this.vx);
 
         if (this.isBoss && this.bossStyle === 'dragon') {
@@ -714,11 +717,11 @@ class Fish {
         ctx.restore();
     }
 
-    // 繪製巨鯨 Boss (超大型波動貼圖 + 深淵光環)
+    // 繪製大型貼圖 Boss (巨鯨/黃金龍：超大型波動貼圖 + 深淵光環)
     drawBossWhale(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle * 0.4);
+        ctx.rotate(this.angle);
 
         const facingLeft = this.vx < 0;
         if (facingLeft) {
@@ -2813,6 +2816,7 @@ class Game {
 
 window.addEventListener('DOMContentLoaded', () => {
     const game = new Game();
+    window.__game = game; // 供除錯/自動化測試使用
     loadAndProcessAssets(() => {
         game.loop();
     });
